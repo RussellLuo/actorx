@@ -56,3 +56,7 @@ fmt.Println(n) // 5
 更多阅读入口和验证说明见[文档目录](docs/README.zh.md)。
 
 分布式逻辑 Actor 见 [Actorx Distributed](dist/README.zh.md)：NATS 通信、条件归属、固定代次和显式恢复。
+
+## 许可证
+
+[MIT](LICENSE)
