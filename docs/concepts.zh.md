@@ -63,6 +63,8 @@ worker 不能访问可变 actor 状态。等待期间 actor 可处理其他消�
 
 Runtime 默认使用根包的 LocalChannel，通过 Channel 接口将请求送入目标 mailbox。本地投递直接传递普通 Go 值，调用方通过 Addr 使用实例，业务 handler 无需管理投递过程。
 
+`actorx.Addr` 指向具体实例。ExportAddr/ImportAddr 只传递实例身份，不传递原始 Stop/Wait 能力，见[生命周期](lifecycle.zh.md#通过地址或-handler-context-停止)。逻辑 Type/ID 寻址、按需激活和分布式 Stop/Wait 属于独立的 [Actorx Distributed 模块](../dist/README.zh.md)。自定义投递适配使用 [Channel 扩展接口](runtime.zh.md#channel-扩展接口)。
+
 <a id="静态读取消息描述"></a>
 
 静态读取消息清单等工具能力集中在[运行语义参考](runtime.zh.md#静态读取消息描述)，无需在第一次编写 Actor 时掌握。

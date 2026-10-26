@@ -14,7 +14,7 @@ import (
 )
 
 // This fixture proves cross-package access and lifecycle boundaries only. Real
-// NATS binding evidence lives in actord and is never inferred from it.
+// NATS binding evidence lives in dist and is never inferred from it.
 type seamChannel struct {
 	mu               sync.Mutex
 	opened           bool

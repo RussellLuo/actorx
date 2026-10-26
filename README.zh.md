@@ -44,8 +44,11 @@ fmt.Println(n) // 5
 
 | 文档 | 内容 |
 | --- | --- |
+| [快速入门](docs/getting-started.zh.md) | 编写 Actor，通过消息调用它，并运行完整示例。 |
 | [核心概念](docs/concepts.zh.md) | 组件如何通过消息协作，状态与任务由谁管理。 |
 | [运行语义](docs/runtime.zh.md) | 消息处理、异步任务、错误和容量控制的具体约定。 |
 | [生命周期](docs/lifecycle.zh.md) | 组件初始化、停止与资源清理。 |
 
 更多阅读入口和验证说明见[文档目录](docs/README.zh.md)。
+
+分布式逻辑 Actor 见 [Actorx Distributed](dist/README.zh.md)：NATS 通信、条件归属、固定代次和显式恢复。

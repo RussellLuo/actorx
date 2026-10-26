@@ -44,8 +44,11 @@ The example uses generated message bindings. See [Getting started](docs/getting-
 
 | Document | Contents |
 | --- | --- |
+| [Getting started](docs/getting-started.md) | Write an actor, call it through messages, and run the complete example. |
 | [Core concepts](docs/concepts.md) | How components collaborate through messages and own their state and tasks. |
 | [Runtime reference](docs/runtime.md) | Rules for message handling, asynchronous tasks, errors, and capacity limits. |
 | [Lifecycle](docs/lifecycle.md) | Component initialization, shutdown, and resource cleanup. |
 
 See the [documentation guide](docs/README.md) for further reading and validation instructions.
+
+For distributed logical Actors, see [Actorx Distributed](dist/README.md): NATS messaging, conditional ownership, fixed generations and explicit recovery.

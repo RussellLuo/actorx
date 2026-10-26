@@ -63,6 +63,8 @@ Each Spawn creates an independent instance and waits for Started before returnin
 
 Runtime defaults to the root package's LocalChannel, routing requests through the Channel interface into the target mailbox. Local delivery passes ordinary Go values directly. Callers use Addr; business handlers do not manage delivery.
 
+`actorx.Addr` identifies a concrete instance. ExportAddr/ImportAddr transfer that identity without its original Stop/Wait capabilities; see [Lifecycle](lifecycle.md#stopping-through-an-address-or-handler-context). Logical Type/ID addressing, activation and distributed Stop/Wait belong to the separate [Actorx Distributed module](../dist/README.md). Custom delivery adapters use the [Channel extension interface](runtime.md#channel-extension-interface).
+
 <a id="reading-message-metadata"></a>
 
 Tooling features such as [reading message metadata](runtime.md#reading-message-metadata) live in the runtime reference and are not prerequisites for writing a first actor.

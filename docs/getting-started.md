@@ -2,23 +2,20 @@
 
 English | [中文](getting-started.zh.md)
 
-This complete counter connects the actor author's work with the caller's work. Requires Go 1.27+, with no external service needed.
+This counter shows how to write an actor and call it through messages. It keeps a count, updates it when an addition message arrives, and returns the result to the caller.
 
-## Create an application module
-
-Use a local Actorx checkout. Replace `/absolute/path/to/actorx` with its absolute path:
+Requires Go 1.27+, with no external service needed. Start in an empty directory:
 
 ```sh
 mkdir counter-app
 cd counter-app
 go mod init example.com/counter-app
-go mod edit -require=github.com/RussellLuo/actorx@v0.0.0
-go mod edit -replace=github.com/RussellLuo/actorx=/absolute/path/to/actorx
+go get github.com/RussellLuo/actorx
 ```
 
-`v0.0.0` is a local placeholder; replace points the application at current source. These steps do not validate a released dependency. To consume a release, select an actual version containing the required APIs, remove replace, and verify separately.
+## 1. Define a message and an actor
 
-Save the source below as `main.go`, then generate its message bindings and run it:
+`Add` represents an addition request, and `Counter` holds the count. Save the following as `main.go`:
 
 ```go
 //go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
@@ -41,7 +38,17 @@ func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
     c.n += msg.N
     return c.n, nil
 }
+```
 
+`Counter.Add` receives an `Add` message, adds `N` to the count, and returns the new count. The runtime supplies the first argument, `actorx.Context`; this example does not need to use it.
+
+The `//actorx:actor` marker selects Counter's public handlers for binding generation. You write the state, messages, and handler methods; a later step generates the bindings.
+
+## 2. Create an instance and call it
+
+The application uses a `Runtime` to create and manage actor instances. `Spawn` returns an instance's address, which the caller uses to send messages. Continue in the same `main.go`:
+
+```go
 func run() error {
     ctx := context.Background()
     rt, err := actorx.NewRuntime(ctx)
@@ -69,14 +76,18 @@ func main() {
 }
 ```
 
-Generate and run:
+`Call[int]` sends `Add{N: 5}` and waits for an integer result from the handler. Messages to the same instance execute serially, and later calls continue with its saved count. Once the object is passed to `Spawn`, access its state through messages.
+
+`defer rt.Close(ctx)` closes the runtime when the application finishes, stopping and waiting for its instances to exit. The example returns errors to `main` so they are reported after cleanup.
+
+## 3. Generate bindings and run
+
+The file's `go:generate` directive invokes actorx-gen. Generate `actorx.gen.go`, then run the program:
 
 ```sh
 go generate .
 go run .
 ```
-
-`go generate .` runs actorx-gen through the file directive and creates `actorx.gen.go`, connecting handler methods to message types. This generated file compiles alongside `main.go`; the type marker alone does not generate code.
 
 Expected output:
 
@@ -84,33 +95,19 @@ Expected output:
 counter: 5
 ```
 
-## Author: state, messages, and handlers
-
-`Counter.n` is private instance state; `Add` is an ordinary Go message. The `Counter.Add` handler updates state and returns a result. The runtime supplies its first argument.
-
-`//actorx:actor` selects this type's public handlers. actorx-gen uses their message parameters and return values to generate bindings, making Counter satisfy `actorx.Actor`. Business code maintains messages, state, and handler methods.
-
-An actor handles messages serially and updates state through its own handlers. Local messages are not deep-copied; callers and handlers must agree on ownership when using maps, slices, or pointers.
-
-## Caller: create, call, and close
-
-1. `NewRuntime(ctx)` creates the runtime.
-2. `Spawn(&Counter{})` creates a counter instance and returns its address. Use messages afterward; do not access mutable fields or Spawn the same object again.
-3. `Call[int](ctx, Add{N: 5})` requests an addition of 5 and waits for the integer result.
-4. `defer rt.Close(ctx)` closes the runtime and cleans up its instances when the application finishes.
-
-The example checks the error from each step. See the [runtime reference](runtime.md) for more call modes and error rules.
+The generated file binds `Counter.Add` to the `Add` message and compiles alongside `main.go`.
 
 <a id="optional-generate-bindings"></a>
 
 ## Update handlers
 
-After adding or changing public handlers, rerun `go generate .` in the application directory before running the application. Generated bindings live in `actorx.gen.go`; the marker and generation directive stay in business source.
-
-Exclude public helpers with `//actorx:ignore`. See the [generator reference](runtime.md#generator-reference) for selection, signatures, and generated-file checks. For direct control of low-level bindings, see the optional [handwritten bindings](runtime.md#handwritten-bindings) reference.
+After adding or changing public handlers, rerun `go generate .` to update the bindings before running the program. Exclude public helpers with `//actorx:ignore`; see the [generator reference](runtime.md#generator-reference) for more selection and signature rules.
 
 ## Continue learning
 
-Read [Core concepts](concepts.md), then run [profile](../examples/profile/README.md), [chat](../examples/chat/README.md), [lifecycle](../examples/lifecycle/README.md), and [composition](../examples/composition/README.md). They add owned tasks, streaming, lifecycle, and actor collaboration.
+The repository's [counter](../examples/counter/README.md) extends the same scenario with queries, resets, and `Send`. Read [Core concepts](concepts.md) for the relationships between state, addresses, tasks, and Runtime, then explore these examples as needed:
 
-The repository's [counter](../examples/counter/README.md) adds more messages.
+- [profile](../examples/profile/README.md): fetch data in an asynchronous task and reply on completion.
+- [chat](../examples/chat/README.md): stream results and support cancellation.
+- [lifecycle](../examples/lifecycle/README.md): observe startup, shutdown, and resource cleanup.
+- [composition](../examples/composition/README.md): create another actor, collaborate through its address, and stop the instance.

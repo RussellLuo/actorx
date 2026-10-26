@@ -2,23 +2,20 @@
 
 [English](getting-started.md) | 中文
 
-本页用一个完整计数器串起 Actor 作者侧与使用侧。需要 Go 1.27+，无需外部服务。
+下面用一个计数器说明如何编写 Actor，并通过消息调用它：计数器保存当前计数，收到累加消息后更新状态，再把结果返回给调用方。
 
-## 创建独立项目
-
-下面使用已检出的 Actorx 源码。将 `/absolute/path/to/actorx` 改为仓库的绝对路径：
+需要 Go 1.27+，无需外部服务。在空目录中准备示例：
 
 ```sh
 mkdir counter-app
 cd counter-app
 go mod init example.com/counter-app
-go mod edit -require=github.com/RussellLuo/actorx@v0.0.0
-go mod edit -replace=github.com/RussellLuo/actorx=/absolute/path/to/actorx
+go get github.com/RussellLuo/actorx
 ```
 
-`v0.0.0` 是本地占位版本，replace 让应用消费当前源码。这套步骤不验证发布依赖；改用发布版本时，选择包含所需 API 的真实版本、移除 replace，再单独验证。
+## 1. 定义消息和 Actor
 
-将下面的源文件保存为 `main.go`，随后生成消息绑定并运行：
+`Add` 表示一次累加请求，`Counter` 保存计数。将以下代码保存为 `main.go`：
 
 ```go
 //go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
@@ -41,7 +38,17 @@ func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
     c.n += msg.N
     return c.n, nil
 }
+```
 
+`Counter.Add` 接收 `Add` 消息，将 `N` 加到当前计数上，并返回新的计数。首参 `actorx.Context` 由运行时提供；这个例子不需要使用它。
+
+`//actorx:actor` 标记让生成器为 `Counter` 的公开处理方法生成消息绑定。你只需编写状态、消息和处理方法，绑定代码在后面的步骤中生成。
+
+## 2. 创建实例并调用
+
+应用通过 `Runtime` 创建和管理 Actor 实例。`Spawn` 返回实例的地址，调用方通过地址发送消息。在同一个 `main.go` 中继续添加：
+
+```go
 func run() error {
     ctx := context.Background()
     rt, err := actorx.NewRuntime(ctx)
@@ -69,14 +76,18 @@ func main() {
 }
 ```
 
-生成并运行：
+`Call[int]` 发送 `Add{N: 5}`，等待处理方法返回整数结果。同一实例的消息串行执行；后续调用会继续使用该实例保存的计数。对象交给 `Spawn` 后，通过消息访问它的状态。
+
+`defer rt.Close(ctx)` 在应用结束时关闭运行时，停止并等待它管理的实例退出。示例把错误返回到 `main`，在完成清理后统一报告。
+
+## 3. 生成绑定并运行
+
+文件开头的 `go:generate` 指令调用 actorx-gen。执行以下命令，生成 `actorx.gen.go`，再运行程序：
 
 ```sh
 go generate .
 go run .
 ```
-
-`go generate .` 根据文件中的指令运行 actorx-gen，创建 `actorx.gen.go`，将处理方法绑定到消息类型。生成文件与 `main.go` 一起编译；类型标记本身不会自动生成代码。
 
 预期输出：
 
@@ -84,33 +95,19 @@ go run .
 counter: 5
 ```
 
-## 作者侧：状态、消息和处理方法
-
-`Counter.n` 是实例私有状态，`Add` 是普通 Go 消息。handler `Counter.Add` 负责更新状态并返回结果，首参由框架提供。
-
-`//actorx:actor` 选择这个类型的公开处理方法。actorx-gen 根据消息参数和返回值生成绑定，让 Counter 满足 `actorx.Actor` 接口；业务代码只需维护消息、状态和处理方法。
-
-一个 actor 串行处理消息，由自己的处理方法更新状态。本地消息不深拷贝；使用 map、slice 或指针时，调用双方需要约定可变数据的归属。
-
-## 使用侧：创建、调用和关闭
-
-1. `NewRuntime(ctx)` 创建运行时。
-2. `Spawn(&Counter{})` 创建计数器实例并返回地址。随后通过消息使用对象，不再直接读写字段，也不重复 Spawn 同一对象。
-3. `Call[int](ctx, Add{N: 5})` 请求累加 5，等待并取得整数结果。
-4. `defer rt.Close(ctx)` 在应用结束时关闭运行时并回收所属实例。
-
-示例检查每一步返回的 error。更多调用模式和错误约定见[运行语义参考](runtime.zh.md)。
+生成文件把 `Counter.Add` 绑定到 `Add` 消息，与 `main.go` 一起编译。
 
 <a id="可选生成绑定"></a>
 
 ## 更新处理方法
 
-新增或修改公开 handler 后，在应用目录重新运行 `go generate .`，再运行应用。`actorx.gen.go` 保存生成的绑定；类型标记与生成指令保留在业务源文件中。
-
-辅助公开方法用 `//actorx:ignore` 排除。类型选择、签名和生成检查等约定见[生成器参考](runtime.zh.md#生成器参考)。需要直接控制底层绑定时，可选读[手写绑定](runtime.zh.md#手写绑定)。
+新增或修改公开处理方法后，重新运行 `go generate .` 更新绑定，再运行程序。辅助公开方法可用 `//actorx:ignore` 排除；更多选择和签名规则见[生成器参考](runtime.zh.md#生成器参考)。
 
 ## 继续学习
 
-先阅读[核心概念](concepts.zh.md)，再依次运行 [profile](../examples/profile/README.zh.md)、[chat](../examples/chat/README.zh.md)、[lifecycle](../examples/lifecycle/README.zh.md)和 [composition](../examples/composition/README.zh.md)。它们分别增加异步任务、流、生命周期和实例协作。
+仓库内的 [counter](../examples/counter/README.zh.md) 在同一场景中增加了查询、重置和 `Send` 调用。阅读[核心概念](concepts.zh.md)，了解状态、地址、任务和 Runtime 的关系后，可以按需要继续运行：
 
-仓库内扩展计数器见 [counter](../examples/counter/README.zh.md)。
+- [profile](../examples/profile/README.zh.md)：在异步任务中查询数据，完成后回复。
+- [chat](../examples/chat/README.zh.md)：逐段返回结果并支持取消。
+- [lifecycle](../examples/lifecycle/README.zh.md)：观察启动、停止和资源清理。
+- [composition](../examples/composition/README.zh.md)：创建另一个 Actor，通过地址协作并回收实例。

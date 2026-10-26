@@ -17,6 +17,7 @@ func fixture(t *testing.T, files map[string]string) string {
 		t.Fatal(err)
 	}
 
+	// Generator fixtures must exercise the current checkout, including unpublished changes.
 	files["go.mod"] = `module fixture
 
 go 1.27
