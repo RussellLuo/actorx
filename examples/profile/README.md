@@ -14,6 +14,6 @@ go run ./examples/profile
 profile: alice (alice@example.com)
 ```
 
-`Directory.Lookup` starts the lookup with `ctx.StartTask` and returns without blocking the actor. The completion callback runs serially on the actor, clears the loading state, and completes the deferred reply. `GetStatus` remains available while the lookup is running. Only one lookup is accepted at a time.
+`Directory.Lookup` starts the lookup with `actorx.StartTask` and returns without blocking the actor. The completion callback runs serially on the actor, clears the loading state, and completes the deferred reply. `GetStatus` remains available while the lookup is running. Only one lookup is accepted at a time.
 
 See [chat](../chat/README.md) for streaming and early cancellation. After changing handlers, run `go generate ./examples/profile`.

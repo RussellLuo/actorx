@@ -9,9 +9,6 @@ import (
 )
 
 func TestAddrStopValidationAndEmptyActor(t *testing.T) {
-	var nilContext *Context
-	nilContext.Stop(errors.New("ignored"))
-	new(Context).Stop(nil)
 	rt := runtimeFor(t)
 	a := spawnFor(t, rt, func() []Binding { return []Binding{} })
 	addr := a.addr()
@@ -71,8 +68,8 @@ func TestAddrStopFullBudgetsAndHandlerBarrier(t *testing.T) {
 	var notices, cleanups atomic.Int32
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleDeferred(func(ctx *Context, _ get, _ Reply[int]) error {
-				if _, err := ctx.StartTask(func(workCtx context.Context) (int, error) {
+			HandleDeferred(func(ctx Context, _ get, _ Reply[int]) error {
+				if _, err := StartTask(ctx, func(workCtx context.Context) (int, error) {
 					<-workCtx.Done()
 					close(workerCanceled)
 					return 0, workCtx.Err()
@@ -87,11 +84,11 @@ func TestAddrStopFullBudgetsAndHandlerBarrier(t *testing.T) {
 				<-release
 				return nil
 			}),
-			HandleMessage(func(*Context, Stopping) error {
+			HandleMessage(func(Context, Stopping) error {
 				notices.Add(1)
 				return nil
 			}),
-			HandleMessage(func(*Context, Stopped) error {
+			HandleMessage(func(Context, Stopped) error {
 				cleanups.Add(1)
 				notices.Add(1)
 				return nil
@@ -163,19 +160,19 @@ func TestContextStopPhases(t *testing.T) {
 			cause := errors.New("self stop")
 			var early Addr
 			var callbacks atomic.Int32
-			stop := func(ctx *Context) {
+			stop := func(ctx Context) {
 				ctx.Stop(cause)
 				ctx.WithContext(context.Background()).Stop(errors.New("ignored"))
 			}
 			a, err := rt.Spawn(bindingsFunc(func() []Binding {
 				return []Binding{
-					HandleMessage(func(ctx *Context, _ Started) error {
-						early = ctx.actor.addr()
+					HandleMessage(func(ctx Context, _ Started) error {
+						early = ctx.actorContext().actor.addr()
 						if phase == "Started" {
 							stop(ctx)
 						}
 						if phase == "completion" {
-							_, err := ctx.StartTask(func(context.Context) (int, error) { return 1, nil }, func(int, error) bool {
+							_, err := StartTask(ctx, func(context.Context) (int, error) { return 1, nil }, func(int, error) bool {
 								stop(ctx)
 								callbacks.Add(1)
 								return true
@@ -185,15 +182,15 @@ func TestContextStopPhases(t *testing.T) {
 
 						return nil
 					}),
-					Handle(func(ctx *Context, _ get) (int, error) {
+					Handle(func(ctx Context, _ get) (int, error) {
 						stop(ctx)
 						return 1, nil
 					}),
-					HandleMessage(func(ctx *Context, _ Stopping) error {
+					HandleMessage(func(ctx Context, _ Stopping) error {
 						ctx.Stop(errors.New("ignored stopping"))
 						return nil
 					}),
-					HandleMessage(func(ctx *Context, _ Stopped) error {
+					HandleMessage(func(ctx Context, _ Stopped) error {
 						ctx.Stop(errors.New("ignored stopped"))
 						return nil
 					}),
@@ -227,7 +224,7 @@ type Stop struct{}
 
 type stopBusiness struct{ calls int }
 
-func (s *stopBusiness) Stop(*Context, Stop) error {
+func (s *stopBusiness) Stop(Context, Stop) error {
 	s.calls++
 	return nil
 }
@@ -236,7 +233,7 @@ func TestBusinessStopRemainsOrdinaryMessage(t *testing.T) {
 	rt := runtimeFor(t)
 	s := &stopBusiness{}
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(s.Stop), Handle(func(*Context, get) (int, error) { return s.calls, nil })}
+		return []Binding{HandleMessage(s.Stop), Handle(func(Context, get) (int, error) { return s.calls, nil })}
 	})
 	if err := a.addr().Send(context.Background(), Stop{}); err != nil {
 		t.Fatal(err)
@@ -267,8 +264,8 @@ func TestAddrStopStartupPublicationRace(t *testing.T) {
 		var cleanups atomic.Int32
 		go func() {
 			a, err := rt.Spawn(bindingsFunc(func() []Binding {
-				return []Binding{HandleMessage(func(*Context, Stopped) error { cleanups.Add(1); return nil }), HandleMessage(func(ctx *Context, _ Started) error {
-					early <- ctx.actor.addr()
+				return []Binding{HandleMessage(func(Context, Stopped) error { cleanups.Add(1); return nil }), HandleMessage(func(ctx Context, _ Started) error {
+					early <- ctx.actorContext().actor.addr()
 					close(entered)
 					<-release
 					return nil

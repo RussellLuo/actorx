@@ -32,7 +32,7 @@ type Q struct{}
 //actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, Q) error { return nil }
+func (*A) One(actorx.Context, Q) error { return nil }
 
 var _ actorx.Actor = (*A)(nil)
 `})
@@ -81,7 +81,7 @@ type Q struct{}
 //actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, Q) error { return nil }
+func (*A) One(actorx.Context, Q) error { return nil }
 `,
 			})
 			t.Setenv("GOFLAGS", "-tags=actorx_feature")
@@ -102,7 +102,7 @@ func (*A) One(*actorx.Context, Q) error { return nil }
 			source = append(source, []byte(`
 type R struct{}
 
-func (*A) Two(*actorx.Context, R) error { return nil }
+func (*A) Two(actorx.Context, R) error { return nil }
 `)...)
 			if err := os.WriteFile(path, source, 0644); err != nil {
 				t.Fatal(err)
@@ -129,7 +129,7 @@ type Q struct{}
 //actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, Q) error { return nil }
+func (*A) One(actorx.Context, Q) error { return nil }
 `,
 	})
 
@@ -157,7 +157,7 @@ type Q struct{}
 //actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, Q) error { return nil }
+func (*A) One(actorx.Context, Q) error { return nil }
 `,
 		"feature.go": `//go:build actorx_feature
 
@@ -167,7 +167,7 @@ import "github.com/RussellLuo/actorx"
 
 type R struct{}
 
-func (*A) Two(*actorx.Context, R) error { return nil }
+func (*A) Two(actorx.Context, R) error { return nil }
 `,
 	})
 

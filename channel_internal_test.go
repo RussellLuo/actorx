@@ -9,7 +9,7 @@ import (
 func TestCallerAssociationsSettleOnFailureAndCancellation(t *testing.T) {
 	rt := runtimeFor(t, WithCallLimit(1))
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(*Context, get, Reply[int]) error { return nil })}
+		return []Binding{HandleDeferred(func(Context, get, Reply[int]) error { return nil })}
 	})
 	if _, err := a.addr().Call[int](context.Background(), struct{}{}); !errors.Is(err, ErrUnhandled) {
 		t.Fatal(err)

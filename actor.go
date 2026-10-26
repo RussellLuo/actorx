@@ -26,11 +26,12 @@ type Actor interface {
 
 // actor is the Runtime-owned execution state.
 type actor struct {
-	mu     sync.Mutex
-	rt     *Runtime
-	id     string
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu             sync.Mutex
+	rt             *Runtime
+	contextWrapper ContextWrapper
+	id             string
+	ctx            context.Context
+	cancel         context.CancelFunc
 
 	// mu protects lifecycle flags, phase, cause and the state collections.
 	// bindings become immutable before channel binding and startup.
@@ -276,7 +277,16 @@ func (a *actor) dispatch(next item) (err error) {
 		return nil
 	}
 
-	return next.binding.invoke(&Context{Context: ctx, actor: a}, next.msg, next.req)
+	handlerCtx, err := a.newContext(ctx)
+	if err != nil {
+		if next.req != nil {
+			a.record(err)
+			next.req.finish(nil, err)
+			a.stop(nil)
+		}
+		return err
+	}
+	return next.binding.invoke(handlerCtx, next.msg, next.req)
 }
 
 func (a *actor) record(err error) {

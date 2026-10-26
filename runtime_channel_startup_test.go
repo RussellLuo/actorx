@@ -46,7 +46,7 @@ func TestRuntimeChannelStartup(t *testing.T) {
 			go func() {
 				a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 					return []actorx.Binding{
-						actorx.HandleMessage(func(*actorx.Context, actorx.Started) error {
+						actorx.HandleMessage(func(actorx.Context, actorx.Started) error {
 							close(ready) // Bind is ready, but admission must remain closed.
 							<-release
 							if fail {
@@ -55,15 +55,15 @@ func TestRuntimeChannelStartup(t *testing.T) {
 
 							return nil
 						}),
-						actorx.Handle(func(*actorx.Context, localQuery) (int, error) {
+						actorx.Handle(func(actorx.Context, localQuery) (int, error) {
 							handled.Add(1)
 							return 7, nil
 						}),
-						actorx.HandleMessage(func(*actorx.Context, actorx.Stopping) error {
+						actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error {
 							hooks.Add(1)
 							return nil
 						}),
-						actorx.HandleMessage(func(*actorx.Context, actorx.Stopped) error {
+						actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error {
 							hooks.Add(1)
 							return nil
 						}),
@@ -130,7 +130,7 @@ func TestRuntimeChannelStartup(t *testing.T) {
 
 			// A later Spawn must not revive the stopped or rolled-back address.
 			next, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-				return []actorx.Binding{actorx.Handle(func(*actorx.Context, localQuery) (int, error) { return 11, nil })}
+				return []actorx.Binding{actorx.Handle(func(actorx.Context, localQuery) (int, error) { return 11, nil })}
 			}))
 			if err != nil {
 				t.Fatal(err)

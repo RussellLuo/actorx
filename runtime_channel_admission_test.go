@@ -27,16 +27,16 @@ func TestRuntimeChannelAdmission(t *testing.T) {
 
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 		return []actorx.Binding{
-			actorx.Handle(func(*actorx.Context, localQuery) (int, error) {
+			actorx.Handle(func(actorx.Context, localQuery) (int, error) {
 				close(entered)
 				<-release // Deliberately hold the handler after caller cancellation.
 				return 17, nil
 			}),
-			actorx.HandleMessage(func(*actorx.Context, localNotice) error {
+			actorx.HandleMessage(func(actorx.Context, localNotice) error {
 				close(noticed)
 				return nil
 			}),
-			actorx.Handle(func(*actorx.Context, localDeferred) (int, error) { return 23, nil }),
+			actorx.Handle(func(actorx.Context, localDeferred) (int, error) { return 23, nil }),
 		}
 	}))
 	if err != nil {

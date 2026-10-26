@@ -22,7 +22,7 @@ func TestLocalChannelResourceValues(t *testing.T) {
 	defer rt.Close(context.Background())
 
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.Handle(func(_ *actorx.Context, msg resourceMessage) (chan int, error) {
+		return []actorx.Binding{actorx.Handle(func(_ actorx.Context, msg resourceMessage) (chan int, error) {
 			msg.Values["n"] = msg.Apply(msg.Values["n"])
 			return msg.Notify, nil
 		})}

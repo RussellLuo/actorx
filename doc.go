@@ -13,7 +13,7 @@
 // Bindings support metadata reads on a concrete nil pointer, while Spawn requires
 // a live instance. Each live instance binds its own receiver.
 //
-// Context.StartTask runs work in a worker and returns its completion to the
+// StartTask runs work in a worker and returns its completion to the
 // owning actor's serial execution. Workers use input snapshots; handlers and
 // completion callbacks own mutable actor state. Shutdown waits for tasks and
 // discards results that were not adopted.

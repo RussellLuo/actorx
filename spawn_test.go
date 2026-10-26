@@ -37,14 +37,14 @@ func TestSpawnFailureReturnsZeroAddress(t *testing.T) {
 					panic(failure)
 				}
 				return []Binding{
-					HandleMessage(func(ctx *Context, _ Started) error {
-						early = ctx.actor.addr()
+					HandleMessage(func(ctx Context, _ Started) error {
+						early = ctx.actorContext().actor.addr()
 						if stage == "started-panic" {
 							panic(failure)
 						}
 						return failure
 					}),
-					HandleMessage(func(*Context, Stopped) error { cleaned.Store(true); return nil }),
+					HandleMessage(func(Context, Stopped) error { cleaned.Store(true); return nil }),
 				}
 			})
 			if stage == "nil" {
@@ -95,10 +95,10 @@ func TestContextSpawnStartupPublicationRace(t *testing.T) {
 			parentResult := make(chan spawnOutcome, 1)
 			go func() {
 				addr, err := rt.Spawn(bindingsFunc(func() []Binding {
-					return []Binding{HandleMessage(func(ctx *Context, _ Started) error {
+					return []Binding{HandleMessage(func(ctx Context, _ Started) error {
 						child, err := ctx.Spawn(bindingsFunc(func() []Binding {
-							return []Binding{HandleMessage(func(ctx *Context, _ Started) error {
-								started <- ctx.actor.addr()
+							return []Binding{HandleMessage(func(ctx Context, _ Started) error {
+								started <- ctx.actorContext().actor.addr()
 								<-release
 								return nil
 							})}
@@ -164,19 +164,19 @@ func TestContextSpawnStartupAndAdmission(t *testing.T) {
 	rt := runtimeFor(t)
 	release := make(chan struct{})
 	releaseAtCleanup(t, release)
-	childContext := make(chan *Context, 1)
+	childContext := make(chan Context, 1)
 	parentResult := make(chan spawnOutcome, 1)
 	var completions, handled atomic.Int32
 	go func() {
 		addr, err := rt.Spawn(bindingsFunc(func() []Binding {
 			var worker Addr
 			return []Binding{
-				HandleMessage(func(ctx *Context, _ Started) error {
+				HandleMessage(func(ctx Context, _ Started) error {
 					var err error
 					worker, err = ctx.Spawn(bindingsFunc(func() []Binding {
 						return []Binding{
-							HandleMessage(func(ctx *Context, _ Started) error {
-								_, err := ctx.StartTask(func(context.Context) (int, error) { return 7, nil }, func(int, error) bool {
+							HandleMessage(func(ctx Context, _ Started) error {
+								_, err := StartTask(ctx, func(context.Context) (int, error) { return 7, nil }, func(int, error) bool {
 									completions.Add(1)
 									return true
 								}, nil)
@@ -184,11 +184,11 @@ func TestContextSpawnStartupAndAdmission(t *testing.T) {
 								<-release
 								return err
 							}),
-							Handle(func(*Context, get) (int, error) {
+							Handle(func(Context, get) (int, error) {
 								handled.Add(1)
 								return 11, nil
 							}),
-							HandleStream(func(*Context, startupStream, StreamReply[int]) error {
+							HandleStream(func(Context, startupStream, StreamReply[int]) error {
 								handled.Add(1)
 								return nil
 							}),
@@ -196,15 +196,15 @@ func TestContextSpawnStartupAndAdmission(t *testing.T) {
 					}))
 					return err
 				}),
-				Handle(func(*Context, get) (Addr, error) { return worker, nil }),
+				Handle(func(Context, get) (Addr, error) { return worker, nil }),
 			}
 		}))
 		parentResult <- spawnOutcome{addr, err}
 	}()
 	childCtx := <-childContext
-	child := childCtx.actor.addr()
+	child := childCtx.actorContext().actor.addr()
 	// A completed worker has queued its callback, but Started still owns execution.
-	childCtx.actor.workers.Wait()
+	childCtx.actorContext().actor.workers.Wait()
 	pendingSpawn(t, parentResult)
 	for _, mode := range []mode{sendMode, callMode, streamMode} {
 		var msg any = get{}
@@ -264,18 +264,18 @@ func TestContextSpawnFailurePropagationAndDegrade(t *testing.T) {
 				var parentCleanups atomic.Int32
 				go func() {
 					addr, err := rt.Spawn(bindingsFunc(func() []Binding {
-						return []Binding{HandleMessage(func(*Context, Stopped) error { parentCleanups.Add(1); return nil }), HandleMessage(func(ctx *Context, _ Started) error {
+						return []Binding{HandleMessage(func(Context, Stopped) error { parentCleanups.Add(1); return nil }), HandleMessage(func(ctx Context, _ Started) error {
 							child, err := ctx.Spawn(bindingsFunc(func() []Binding {
 								return []Binding{
-									HandleMessage(func(ctx *Context, _ Started) error {
-										early <- ctx.actor.addr()
+									HandleMessage(func(ctx Context, _ Started) error {
+										early <- ctx.actorContext().actor.addr()
 										if panicStart {
 											panic(failure)
 										}
 
 										return failure
 									}),
-									HandleMessage(func(*Context, Stopped) error {
+									HandleMessage(func(Context, Stopped) error {
 										close(cleaning)
 										<-release
 										return cleanupFailure
@@ -338,9 +338,9 @@ func TestContextSpawnTargetSurvivesCreatorFailure(t *testing.T) {
 	created := make(chan Addr, 1)
 	failure := errors.New("creator startup failed after acquiring dependency")
 	parent, err := rt.Spawn(bindingsFunc(func() []Binding {
-		return []Binding{HandleMessage(func(ctx *Context, _ Started) error {
+		return []Binding{HandleMessage(func(ctx Context, _ Started) error {
 			child, err := ctx.Spawn(bindingsFunc(func() []Binding {
-				return []Binding{Handle(func(*Context, get) (int, error) { return 7, nil })}
+				return []Binding{Handle(func(Context, get) (int, error) { return 7, nil })}
 			}))
 			if err != nil {
 				return err
@@ -369,28 +369,28 @@ func TestContextSpawnWaitCancellationAndClose(t *testing.T) {
 	for _, action := range []string{"request-cancel", "creator-stop", "runtime-close"} {
 		t.Run(action, func(t *testing.T) {
 			rt := runtimeFor(t)
-			started := make(chan *Context, 1)
+			started := make(chan Context, 1)
 			release := make(chan struct{})
 			releaseAtCleanup(t, release)
 			result := make(chan spawnOutcome, 1)
 			var handled atomic.Int32
 			parent, err := rt.Spawn(bindingsFunc(func() []Binding {
 				return []Binding{
-					Handle(func(ctx *Context, _ wait) (Addr, error) {
+					Handle(func(ctx Context, _ wait) (Addr, error) {
 						child, err := ctx.Spawn(bindingsFunc(func() []Binding {
 							return []Binding{
-								HandleMessage(func(ctx *Context, _ Started) error {
+								HandleMessage(func(ctx Context, _ Started) error {
 									started <- ctx
 									<-release
 									return nil
 								}),
-								Handle(func(*Context, get) (int, error) { return 7, nil }),
+								Handle(func(Context, get) (int, error) { return 7, nil }),
 							}
 						}))
 						result <- spawnOutcome{child, err}
 						return child, err
 					}),
-					HandleMessage(func(*Context, get) error {
+					HandleMessage(func(Context, get) error {
 						handled.Add(1)
 						return nil
 					}),
@@ -409,7 +409,7 @@ func TestContextSpawnWaitCancellationAndClose(t *testing.T) {
 				callResult <- err
 			}()
 			childCtx := <-started
-			child := childCtx.actor.addr()
+			child := childCtx.actorContext().actor.addr()
 			if err := parent.Send(context.Background(), get{}); err != nil {
 				t.Fatal(err)
 			}
@@ -483,8 +483,8 @@ func TestContextSpawnWaitCancellationAndClose(t *testing.T) {
 }
 
 func TestContextSpawnValidationAndCompletion(t *testing.T) {
-	var nilContext *Context
-	for _, ctx := range []*Context{nilContext, {}, {Context: context.Background()}} {
+	var nilContext *localContext
+	for _, ctx := range []Context{nilContext, &localContext{}, &localContext{Context: context.Background()}} {
 		if addr, err := ctx.Spawn(nil); addr != (Addr{}) || !errors.Is(err, ErrSetup) {
 			t.Fatal(addr, err)
 		}
@@ -492,22 +492,22 @@ func TestContextSpawnValidationAndCompletion(t *testing.T) {
 
 	rt := runtimeFor(t)
 	result := make(chan spawnOutcome, 1)
-	stoppedContext := make(chan *Context, 1)
+	stoppedContext := make(chan Context, 1)
 	parent, err := rt.Spawn(bindingsFunc(func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ Started) error {
+			HandleMessage(func(ctx Context, _ Started) error {
 				if addr, err := ctx.Spawn(nil); addr != (Addr{}) || !errors.Is(err, ErrSetup) {
 					t.Error("invalid setup", addr, err)
 				}
 
-				_, err := ctx.StartTask(func(context.Context) (int, error) { return 1, nil }, func(int, error) bool {
+				_, err := StartTask(ctx, func(context.Context) (int, error) { return 1, nil }, func(int, error) bool {
 					addr, err := ctx.Spawn(bindingsFunc(func() []Binding { return []Binding{} }))
 					result <- spawnOutcome{addr, err}
 					return true
 				}, nil)
 				return err
 			}),
-			HandleMessage(func(ctx *Context, _ Stopping) error {
+			HandleMessage(func(ctx Context, _ Stopping) error {
 				if addr, err := ctx.Spawn(bindingsFunc(func() []Binding {
 					t.Error("setup during stopping")
 					return nil
@@ -517,7 +517,7 @@ func TestContextSpawnValidationAndCompletion(t *testing.T) {
 
 				return nil
 			}),
-			HandleMessage(func(ctx *Context, _ Stopped) error {
+			HandleMessage(func(ctx Context, _ Stopped) error {
 				stoppedContext <- ctx
 				return nil
 			}),
@@ -545,7 +545,7 @@ func TestContextSpawnValidationAndCompletion(t *testing.T) {
 	if err := rt.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if addr, err := (&Context{Context: context.Background(), actor: owner}).Spawn(
+	if addr, err := (&localContext{Context: context.Background(), actor: owner}).Spawn(
 		bindingsFunc(func() []Binding { return nil }),
 	); addr != (Addr{}) || !errors.Is(err, ErrClosed) {
 		t.Fatal(addr, err)

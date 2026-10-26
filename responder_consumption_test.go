@@ -47,8 +47,8 @@ func TestResponderConsumptionBarrier(t *testing.T) {
 
 	wrote := make(chan error, 1)
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.HandleStream(func(ctx *actorx.Context, _ localChunks, reply actorx.StreamReply[int]) error {
-			_, err := ctx.StartTask(func(work context.Context) (struct{}, error) {
+		return []actorx.Binding{actorx.HandleStream(func(ctx actorx.Context, _ localChunks, reply actorx.StreamReply[int]) error {
+			_, err := actorx.StartTask(ctx, func(work context.Context) (struct{}, error) {
 				err := reply.Write(work, 7, 1)
 				wrote <- err
 				return struct{}{}, err

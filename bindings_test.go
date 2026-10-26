@@ -11,12 +11,12 @@ import (
 
 func TestBindingsInstallationCopiesSlice(t *testing.T) {
 	rt := runtimeFor(t)
-	entries := []Binding{Handle(func(*Context, get) (int, error) { return 7, nil })}
+	entries := []Binding{Handle(func(Context, get) (int, error) { return 7, nil })}
 	addr, err := rt.Spawn(bindingsFunc(func() []Binding { return entries }))
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries[0] = Handle(func(*Context, get) (int, error) { return 99, nil })
+	entries[0] = Handle(func(Context, get) (int, error) { return 99, nil })
 	if got, err := addr.Call[int](context.Background(), get{}); err != nil || got != 7 {
 		t.Fatal(got, err)
 	}
@@ -52,20 +52,20 @@ func TestResourceOwnershipAcrossStartupFailure(t *testing.T) {
 				var adopted *os.File
 				addr, err := rt.Spawn(bindingsFunc(func() []Binding {
 					return []Binding{
-						HandleMessage(func(*Context, Started) error {
+						HandleMessage(func(Context, Started) error {
 							adopted = file
 							if panicStart {
 								panic(failure)
 							}
 							return failure
 						}),
-						HandleMessage(func(*Context, Stopping) error {
+						HandleMessage(func(Context, Stopping) error {
 							if adopted != nil {
 								release()
 							}
 							return nil
 						}),
-						HandleMessage(func(*Context, Stopped) error { stopped.Add(1); return nil }),
+						HandleMessage(func(Context, Stopped) error { stopped.Add(1); return nil }),
 					}
 				}))
 				if !addr.IsZero() || err == nil {

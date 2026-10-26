@@ -16,7 +16,7 @@ answer: Actors use messages to coordinate work.
 
 The producer writes chunks with `StreamReply.Write` and ends the stream with `Complete`. The caller consumes each chunk through the `Addr.Stream` callback, without collecting a single reply first.
 
-`Write` may block when the reader is slow, so production runs in `ctx.StartTask`, introduced in [profile](../profile/README.md). This example adds streaming to that foundation, with no timer or extra task state.
+`Write` may block when the reader is slow, so production runs in `actorx.StartTask`, introduced in [profile](../profile/README.md). This example adds streaming to that foundation, with no timer or extra task state.
 
 To stop reading early, cancel the context passed to `Stream`. Cancellation requests a stop; `Runtime.Close` waits for owned work to finish.
 

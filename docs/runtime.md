@@ -10,10 +10,10 @@ The normal author workflow uses `//actorx:actor` and actorx-gen to generate mess
 
 | Binding | Handler signature | Calls |
 | --- | --- | --- |
-| `Handle` | `func(*actorx.Context, Q) (R, error)` | Send / Call |
-| `HandleMessage` | `func(*actorx.Context, M) error` | Send / Call; a successful Call result is nil |
-| `HandleDeferred` | `func(*actorx.Context, Q, actorx.Reply[R]) error` | Send / Call; nil return leaves the request waiting for Complete |
-| `HandleStream` | `func(*actorx.Context, Q, actorx.StreamReply[C]) error` | Stream only |
+| `Handle` | `func(actorx.Context, Q) (R, error)` | Send / Call |
+| `HandleMessage` | `func(actorx.Context, M) error` | Send / Call; a successful Call result is nil |
+| `HandleDeferred` | `func(actorx.Context, Q, actorx.Reply[R]) error` | Send / Call; nil return leaves the request waiting for Complete |
+| `HandleStream` | `func(actorx.Context, Q, actorx.StreamReply[C]) error` | Stream only |
 
 Runtime supplies the first argument. It implements standard `context.Context`, carrying request deadlines, cancellation, values, and actor ownership. Caller-side Addr methods take standard contexts.
 
@@ -35,10 +35,10 @@ Call / Stream canceled before execution may skip the handler. Once execution sta
 
 ## Tasks and deferred replies
 
-`ctx.StartTask(work, complete, discard)` manages work owned by the current actor. Workers use input snapshots; completions run serially on the actor. See [profile](../examples/profile/main.go) for complete wiring.
+`actorx.StartTask(ctx, work, complete, discard)` manages work owned by the current actor. Workers use input snapshots; completions run serially on the actor. See [profile](../examples/profile/main.go) for complete wiring.
 
 ```go
-cancel, err := ctx.StartTask(
+cancel, err := actorx.StartTask(ctx,
     func(ctx context.Context) (Result, error) {
         return client.Fetch(ctx) // Use snapshots and a concurrency-safe client.
     },
@@ -50,7 +50,7 @@ cancel, err := ctx.StartTask(
 )
 ```
 
-Start tasks only from Started, a normal handler, or a serial completion. Actorx reserves a task slot and a mailbox completion slot; business messages and completions share FIFO order. Exhaustion returns ErrFull without starting a worker. Stopping / Stopped cannot start work. Nil or unassociated Context returns ErrSetup.
+Start tasks only from Started, a normal handler, or a serial completion. Actorx reserves a task slot and a mailbox completion slot; business messages and completions share FIFO order. Exhaustion returns ErrFull without starting a worker. Stopping / Stopped cannot start work. Nil or invalid Context returns ErrSetup.
 
 | Result path | Ownership |
 | --- | --- |
@@ -65,7 +65,7 @@ Tasks inherit request cancellation, deadlines, and values; actor shutdown always
 
 ```go
 taskCtx := ctx.WithContext(context.WithoutCancel(ctx))
-// Then use taskCtx.StartTask(...); actor shutdown still cancels the task.
+// Then use actorx.StartTask(taskCtx, ...); actor shutdown still cancels the task.
 ```
 
 `WithContext(parent)` also accepts a derived deadline or `context.Background()`. It changes the task parent, not the original Call / Stream wait. Keep timers and connection waits inside controlled work and release them before returning.
@@ -94,13 +94,14 @@ Local byte accounting uses the producer-declared retained payload size, between 
 
 | Option | Default | Scope |
 | --- | --- | --- |
+| `WithInstanceLimit(n)` | 0 (unlimited) | All Runtime instances, including construction, stopping and ctx.Spawn children, until complete exit. |
 | `WithMailboxCapacity(n)` | 64 | Queued messages and reserved completions per actor. |
 | `WithTaskLimit(n)` | 16 | Unsettled tasks per actor, including results awaiting handoff. |
 | `WithPendingLimit(n)` | 256 | Unfinished requests per actor, including Send. |
 | `WithCallLimit(n)` | 256 | Caller-side Call / Stream associations across Runtime. |
 | `WithStreamLimits(items, chunkBytes)` | 8 / 64 KiB | Buffered items per stream and declared size per item. |
 
-All settings must be positive. Message and task admission return ErrFull immediately when capacity is exhausted; stream Write waits for consumption or cancellation. Raising caller capacity does not relax target limits. A Stream retains its caller slot until callbacks and draining finish. Runtime imposes no total actor-count limit; the application controls instance count.
+The instance limit permits zero for unlimited; other settings must be positive. Negative instance limits return ErrSetup. Message and task admission return ErrFull immediately when capacity is exhausted; stream Write waits for consumption or cancellation. Raising caller capacity does not relax target limits. A Stream retains its caller slot until callbacks and draining finish. The instance limit is checked before Bindings; full Spawn returns zero Addr and ErrFull. Rollback releases capacity; unfinished Stopped retains it.
 
 See the synchronized [capacity and backpressure examples](../examples/README.md#capacity-and-backpressure).
 
@@ -187,3 +188,54 @@ func (c *Counter) Bindings() []actorx.Binding {
 Handwritten and generated bindings use the same API and satisfy the same Actor interface. Keep one Bindings implementation per type. See [Bindings and calls](#bindings-and-calls) for the four handler shapes.
 
 Bindings only constructs entries without executing handlers, reading state, or acquiring resources. Bind each instance's own receiver. Static metadata reads also require the [nil-receiver contract](#reading-message-metadata). See [example_describe_test.go](../example_describe_test.go) for a complete handwritten example.
+
+## Context extensions and migration
+
+`actorx.Context` is an interface with standard context methods plus WithContext, Stop, Spawn and State. Runtime owns its private local implementation. Its zero value is a nil interface; methods on nil are invalid. `StartTask` validates ownership and returns ErrSetup for nil, typed nil, empty embedded contexts or missing ownership before reserving any resources.
+
+Install `WithContextFactory` when creating a Runtime. A factory receives the instance Actor once after valid Bindings are installed, before Channel.Bind and Started, and returns its `ContextWrapper`. Business Actors only need Bindings. For example, an application can capture a service:
+
+```go
+type appContext struct {
+    actorx.Context
+    service *Service // Immutable or synchronized by its owner.
+}
+
+factory := func(actorx.Actor) (actorx.ContextWrapper, error) {
+    return func(ctx actorx.Context) actorx.Context {
+        return &appContext{Context: ctx, service: service}
+    }, nil
+}
+rt, err := actorx.NewRuntime(initCtx, actorx.WithContextFactory(factory))
+```
+
+NewRuntime saves the policy without calling it. Omitting the option keeps local contexts; an explicitly nil final factory returns ErrSetup before the channel opens. Repeated options replace the policy rather than compose it. A configured factory must return a non-nil wrapper; use an identity function to preserve the local context. Invalid Bindings or exhausted instance capacity prevent factory execution. Describe does not call the factory.
+
+The factory can read an application's private Actor adapter to capture stable instance environment. Each returned wrapper embeds the exact supplied `actorx.Context`; external packages cannot implement its private ownership method from scratch. Handlers still receive `actorx.Context` and may assert optional capabilities. The generator accepts that interface and its aliases, and rejects pointer signatures or downstream extension interfaces. Binding selection, generation commands and `-check` are unchanged. ContextDecorator and its automatic detection have been removed.
+
+Factories and wrappers must be bounded and perform no I/O, resource acquisition, task starts, handler calls or business-state access. Their environment is fixed at installation or synchronized by its owner. Concurrent Spawns may call the factory concurrently. Factory calls, wrapping and private ownership extraction run without Runtime/actor locks. Core supplies no factory resource cleanup; the environment owner manages its lifetime. Do not wait for the current instance to start or for this Runtime.Close inside the factory.
+
+Wrappers must preserve deadlines, cancellation and values and refer to the exact supplied context; a context from another instance or earlier invocation is rejected. WithContext creates a fresh local context and invokes the same saved wrapper, without rerunning the factory, rereading Actor or stacking previous wrappers. Background preserves capabilities; nil parent panics. Local ctx.Spawn children and grandchildren use the same Runtime factory with their own Actor, retaining independent instance environments and no automatic stop propagation.
+
+| Factory / wrapper failure | Result |
+| --- | --- |
+| Spawn factory binding | Skip Channel.Bind and all lifecycle handlers; return zero Addr after rollback and release the instance slot at complete exit. |
+| Started | Skip the handler; fail Spawn through normal lifecycle rollback. |
+| Ordinary handler | Skip the handler; settle the request with the setup error, record it and stop the instance. |
+| WithContext | Panic carrying the setup error; a surrounding handler uses the existing panic boundary. |
+| Stopping / Stopped | Record the error, skip that callback, and continue the remaining cleanup and exit stages. |
+
+Invalid returns produce ErrSetup. A factory error is joined with ErrSetup and retains its original error chain. A factory or wrapper panic preserves PanicError and its stack, joined with ErrSetup. Only ownership extraction recovers empty-embedding forwarding panics as invalid contexts; business work, completion and discard keep their existing panic boundaries. A handler panic remains an outer PanicError, whose error chain need not match ErrSetup.
+
+Failed shutdown wrapping does not bypass workers, discard or complete-exit accounting. If a skipped Stopping callback was supposed to unblock a worker, Wait/Close can time out and the instance slot remains occupied until that work actually ends. Serial completion keeps its original closure and captured context; it is not wrapped again. A blocked factory remains counted in instance capacity and Spawn/Close waits; after it returns, the normal close check prevents Started or address publication if the Runtime closed.
+
+| Previous API | Current API |
+| --- | --- |
+| `func(ctx *actorx.Context, ...)` | `func(ctx actorx.Context, ...)` |
+| `ctx.StartTask(work, complete, discard)` | `actorx.StartTask(ctx, work, complete, discard)` |
+| `ctx.Context` | Pass `ctx` directly as `context.Context`. |
+| `actorx.Context{}` / `&actorx.Context{}` | Receive a valid Context from Runtime; the interface zero value is nil. |
+| Runtime/instance association APIs | Configure WithContextFactory and embed the supplied Context in its returned wrapper. |
+| Actor ContextDecorator | Move instance binding into ContextFactory and request wrapping into ContextWrapper. |
+
+The removed association APIs are WithRuntimeAssociation, Runtime.SpawnAssociated, Context.RuntimeAssociation and Context.InstanceAssociation. StartTask uses the passed context for cancellation, deadlines and values while retaining its original actor ownership. State remains a local lifecycle snapshot; Spawn remains local creation.

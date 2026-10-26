@@ -15,12 +15,12 @@ func TestDoneWaitsForRequestSettlement(t *testing.T) {
 	stopping := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(*Context, Stopping) error {
+			HandleMessage(func(Context, Stopping) error {
 				close(stopping)
 				return nil
 			}),
-			HandleDeferred(func(ctx *Context, _ get, _ Reply[int]) error { return nil }),
-			HandleMessage(func(ctx *Context, _ wait) error {
+			HandleDeferred(func(ctx Context, _ get, _ Reply[int]) error { return nil }),
+			HandleMessage(func(ctx Context, _ wait) error {
 				close(entered)
 				<-ctx.Done()
 				close(returned)
@@ -112,8 +112,8 @@ func TestDoneSettlesAllPendingRequests(t *testing.T) {
 	entered := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleDeferred(func(ctx *Context, _ get, _ Reply[int]) error { return nil }),
-			HandleMessage(func(ctx *Context, _ wait) error {
+			HandleDeferred(func(ctx Context, _ get, _ Reply[int]) error { return nil }),
+			HandleMessage(func(ctx Context, _ wait) error {
 				close(entered)
 				<-ctx.Done()
 				return nil
@@ -202,19 +202,19 @@ func TestCloseReportsBlockedActorAndPreservesCause(t *testing.T) {
 						close(entered)
 						<-release
 					}
-					return []Binding{HandleMessage(func(*Context, Stopping) error {
+					return []Binding{HandleMessage(func(Context, Stopping) error {
 						if phase == "stopping" {
 							close(entered)
 							<-release
 						}
 						return nil
-					}), HandleMessage(func(ctx *Context, _ get) error {
+					}), HandleMessage(func(ctx Context, _ get) error {
 						if phase == "handler" {
 							close(entered)
 							<-release
 						}
 						if phase == "workers" {
-							_, err := ctx.WithContext(context.Background()).StartTask(
+							_, err := StartTask(ctx.WithContext(context.Background()),
 								func(context.Context) (int, error) {
 									close(entered)
 									<-release
@@ -262,7 +262,7 @@ func TestPendingAndCallerLimitsAreIndependent(t *testing.T) {
 	rt := runtimeFor(t, WithPendingLimit(1), WithCallLimit(2))
 	makeActor := func() *actor {
 		return spawnFor(t, rt, func() []Binding {
-			return []Binding{HandleDeferred(func(ctx *Context, _ get, _ Reply[int]) error { return nil })}
+			return []Binding{HandleDeferred(func(ctx Context, _ get, _ Reply[int]) error { return nil })}
 		})
 	}
 	a, b, c := makeActor(), makeActor(), makeActor()
@@ -292,7 +292,7 @@ func TestStartedErrorIsReturnedOnceAfterSelfStop(t *testing.T) {
 	failure := errors.New("started failed once")
 	for _, stopFirst := range []bool{false, true} {
 		_, err := rt.Spawn(bindingsFunc(func() []Binding {
-			return []Binding{HandleMessage(func(ctx *Context, _ Started) error {
+			return []Binding{HandleMessage(func(ctx Context, _ Started) error {
 				if stopFirst {
 					ctx.Stop(nil)
 				}

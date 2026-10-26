@@ -40,9 +40,9 @@ type Stopping struct{ Reason error }
 // Reason is a cause snapshot; Exit.Reason includes this handler's failure too.
 type Stopped struct{ Reason error }
 
-// State returns a concurrent-safe snapshot. A context without an actor reports
-// StateStopped. StateStopped may precede complete exit while its message handler runs.
-func (ctx *Context) State() State {
+// State returns a concurrent-safe local lifecycle snapshot. StateStopped may
+// precede complete exit while its message handler runs.
+func (ctx *localContext) State() State {
 	if ctx == nil || ctx.actor == nil {
 		return StateStopped
 	}

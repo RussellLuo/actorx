@@ -19,31 +19,31 @@ type Session struct {
 }
 
 // Local lifecycle notices use ordinary handlers; the notice type selects the phase.
-func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
+func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
 	s.messages = 0
 	fmt.Printf("started: state=%s\n", stateName(ctx.State()))
 	return nil
 }
 
-func (s *Session) Receive(ctx *actorx.Context, msg Message) error {
+func (s *Session) Receive(ctx actorx.Context, msg Message) error {
 	s.messages++
 	fmt.Printf("message: %s, state=%s\n", msg.Text, stateName(ctx.State()))
 	return nil
 }
 
 // Logout is an ordinary business message; the handler explicitly requests self-stop.
-func (s *Session) Logout(ctx *actorx.Context, _ Logout) error {
+func (s *Session) Logout(ctx actorx.Context, _ Logout) error {
 	ctx.Stop(nil)
 	return nil
 }
 
-func (s *Session) Stopping(ctx *actorx.Context, msg actorx.Stopping) error {
+func (s *Session) Stopping(ctx actorx.Context, msg actorx.Stopping) error {
 	// Unblock owned work here if needed, before the runtime waits for workers.
 	fmt.Printf("stopping: state=%s, reason=%v\n", stateName(ctx.State()), msg.Reason)
 	return nil
 }
 
-func (s *Session) Stopped(ctx *actorx.Context, msg actorx.Stopped) error {
+func (s *Session) Stopped(ctx actorx.Context, msg actorx.Stopped) error {
 	// Owned work and resource cleanup have finished; Wait completes after return.
 	fmt.Printf("stopped: state=%s, messages=%d, reason=%v\n", stateName(ctx.State()), s.messages, msg.Reason)
 	return nil

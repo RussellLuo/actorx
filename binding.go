@@ -22,7 +22,7 @@ const noLifecyclePhase State = ^State(0)
 type Binding struct {
 	descriptor CallDescriptor
 	phase      State // noLifecyclePhase for ordinary messages; otherwise a lifecycle phase.
-	invoke     func(*Context, any, *request) error
+	invoke     func(Context, any, *request) error
 	invalid    bool
 }
 
@@ -73,11 +73,11 @@ func lifecycleType(t reflect.Type) State {
 }
 
 // Handle binds a synchronous request and reply handler for the concrete type Q.
-func Handle[Q, R any](h func(*Context, Q) (R, error)) Binding {
+func Handle[Q, R any](h func(Context, Q) (R, error)) Binding {
 	b := bindingFor[Q]()
 	b.descriptor = Request[Q, R]()
 	b.invalid = b.invalid || h == nil
-	b.invoke = func(ctx *Context, msg any, r *request) error {
+	b.invoke = func(ctx Context, msg any, r *request) error {
 		out, err := h(ctx, msg.(Q))
 		r.finish(out, err)
 		return nil
@@ -87,14 +87,14 @@ func Handle[Q, R any](h func(*Context, Q) (R, error)) Binding {
 
 // HandleMessage binds a handler that completes without a reply value. Exact
 // Started, Stopping and Stopped value types bind runtime-owned lifecycle notices.
-func HandleMessage[M any](h func(*Context, M) error) Binding {
+func HandleMessage[M any](h func(Context, M) error) Binding {
 	b := bindingFor[M]()
 	if b.phase != noLifecyclePhase && b.descriptor.MessageType().Kind() != reflect.Pointer {
 		b.invalid = false
 	}
 
 	b.invalid = b.invalid || h == nil
-	b.invoke = func(ctx *Context, msg any, r *request) error {
+	b.invoke = func(ctx Context, msg any, r *request) error {
 		err := h(ctx, msg.(M))
 		if r == nil {
 			return err
@@ -119,19 +119,19 @@ func (r Reply[R]) Complete(value R, err error) bool {
 }
 
 // HandleDeferred leaves the request open after the handler returns successfully.
-// The handler normally uses Context.StartTask; its serial completion calls Complete.
-func HandleDeferred[Q, R any](h func(*Context, Q, Reply[R]) error) Binding {
+// The handler normally uses StartTask; its serial completion calls Complete.
+func HandleDeferred[Q, R any](h func(Context, Q, Reply[R]) error) Binding {
 	b := bindingFor[Q]()
 	b.descriptor = Request[Q, R]()
 	b.invalid = b.invalid || h == nil
-	b.invoke = func(ctx *Context, msg any, r *request) error {
+	b.invoke = func(ctx Context, msg any, r *request) error {
 		return h(ctx, msg.(Q), Reply[R]{r})
 	}
 	return b
 }
 
 // StreamReply writes to a bounded caller-owned window. Write may block and must
-// run in a Context.StartTask worker, never in the actor's state handler. bytes is
+// run in a StartTask worker, never in the actor's state handler. bytes is
 // the retained payload size, supplied by the producer (for text, len(text)).
 // Values are not copied.
 type StreamReply[C any] struct{ req *request }
@@ -154,11 +154,11 @@ func (s StreamReply[C]) Complete(err error) bool {
 
 // HandleStream binds a streaming handler. Only Addr.Stream can invoke it;
 // Send and Call fail before execution.
-func HandleStream[Q, C any](h func(*Context, Q, StreamReply[C]) error) Binding {
+func HandleStream[Q, C any](h func(Context, Q, StreamReply[C]) error) Binding {
 	b := bindingFor[Q]()
 	b.descriptor = Streaming[Q, C]()
 	b.invalid = b.invalid || h == nil
-	b.invoke = func(ctx *Context, msg any, r *request) error {
+	b.invoke = func(ctx Context, msg any, r *request) error {
 		return h(ctx, msg.(Q), StreamReply[C]{r})
 	}
 	return b

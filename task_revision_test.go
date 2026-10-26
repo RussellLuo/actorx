@@ -61,7 +61,7 @@ func TestLateTaskCompletionCannotOverwriteCurrentOperation(t *testing.T) {
 		return []actorx.Binding{
 			actorx.HandleMessage(g.cancelRevision),
 			actorx.Handle(g.getRevisionStatus),
-			actorx.HandleDeferred(func(ctx *actorx.Context, msg revisionRequest, reply actorx.Reply[revisionResult]) error {
+			actorx.HandleDeferred(func(ctx actorx.Context, msg revisionRequest, reply actorx.Reply[revisionResult]) error {
 				revision, err := g.begin()
 				if err != nil {
 					return err
@@ -72,7 +72,7 @@ func TestLateTaskCompletionCannotOverwriteCurrentOperation(t *testing.T) {
 					ready, release, settled = newReady, newRelease, newSettled
 				}
 
-				g.cancel, err = ctx.StartTask(
+				g.cancel, err = actorx.StartTask(ctx,
 					func(context.Context) (revisionResult, error) {
 						close(ready)
 						<-release // Deliberately model an I/O operation that ignores cancel.
@@ -180,7 +180,7 @@ func (g *revisionFixture) finish(revision int, err error) {
 	}
 }
 
-func (g *revisionFixture) cancelRevision(_ *actorx.Context, _ cancelRevision) error {
+func (g *revisionFixture) cancelRevision(_ actorx.Context, _ cancelRevision) error {
 	if g.cancel != nil {
 		g.cancel()
 		g.cancel = nil
@@ -191,6 +191,6 @@ func (g *revisionFixture) cancelRevision(_ *actorx.Context, _ cancelRevision) er
 	return nil
 }
 
-func (g *revisionFixture) getRevisionStatus(_ *actorx.Context, _ getRevisionStatus) (revisionStatus, error) {
+func (g *revisionFixture) getRevisionStatus(_ actorx.Context, _ getRevisionStatus) (revisionStatus, error) {
 	return revisionStatus{g.busy, g.revision, g.completed}, nil
 }

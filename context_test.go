@@ -16,10 +16,10 @@ func TestHandlerContextPreservesRequestDeadlineAndValues(t *testing.T) {
 
 	rt := runtimeFor(t)
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx *Context, _ get, reply Reply[result]) error {
+		return []Binding{HandleDeferred(func(ctx Context, _ get, reply Reply[result]) error {
 			// Standard context helpers and SDKs accept the handler context directly.
 			parent, cancel := context.WithCancel(ctx)
-			_, err := ctx.WithContext(parent).StartTask(
+			_, err := StartTask(ctx.WithContext(parent),
 				func(ctx context.Context) (result, error) {
 					defer cancel()
 
@@ -60,8 +60,8 @@ func TestOwnedTaskObservesRequestCancellation(t *testing.T) {
 	started := make(chan struct{})
 	stopped := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx *Context, _ get, reply Reply[int]) error {
-			_, err := ctx.StartTask(
+		return []Binding{HandleDeferred(func(ctx Context, _ get, reply Reply[int]) error {
+			_, err := StartTask(ctx,
 				func(ctx context.Context) (int, error) {
 					close(started)
 					<-ctx.Done()
@@ -104,10 +104,10 @@ func TestDetachedTaskKeepsItsActorOwner(t *testing.T) {
 
 	for i := range actors {
 		actors[i] = spawnFor(t, rt, func() []Binding {
-			return []Binding{HandleDeferred(func(ctx *Context, _ get, reply Reply[int]) error {
+			return []Binding{HandleDeferred(func(ctx Context, _ get, reply Reply[int]) error {
 				// Remove request cancellation while retaining the current actor owner.
 				ctx = ctx.WithContext(context.WithoutCancel(ctx))
-				_, err := ctx.StartTask(
+				_, err := StartTask(ctx,
 					func(ctx context.Context) (int, error) {
 						close(started[i])
 						defer close(stopped[i])
@@ -186,8 +186,8 @@ func TestDetachedTaskKeepsItsActorOwner(t *testing.T) {
 }
 
 func TestStartTaskRejectsMissingActorContext(t *testing.T) {
-	for _, ctx := range []*Context{nil, {}, {Context: context.Background()}} {
-		_, err := ctx.StartTask(
+	for _, ctx := range []Context{nil, (*localContext)(nil), &localContext{}, &localContext{Context: context.Background()}} {
+		_, err := StartTask(ctx,
 			func(context.Context) (int, error) {
 				t.Error("work started without an actor owner")
 				return 0, nil
@@ -197,6 +197,48 @@ func TestStartTaskRejectsMissingActorContext(t *testing.T) {
 		)
 		if !errors.Is(err, ErrSetup) {
 			t.Fatal(err)
+		}
+	}
+}
+
+// Only internal tests can manufacture an empty private ownership result.
+// Package-external probes exercise all publicly constructible empty wrappers.
+type ownerOverride struct {
+	Context
+	owner      *localContext
+	panicValue any
+}
+
+func (c ownerOverride) actorContext() *localContext {
+	if c.panicValue != nil {
+		panic(c.panicValue)
+	}
+	return c.owner
+}
+
+func TestPrivateContextOwnershipValidation(t *testing.T) {
+	rt := runtimeFor(t)
+	a := newActor(rt)
+	defer a.cancel()
+	for _, bad := range []Context{
+		ownerOverride{},
+		ownerOverride{owner: &localContext{Context: context.Background()}},
+		ownerOverride{owner: &localContext{Context: context.Background(), actor: &actor{}}},
+		ownerOverride{owner: &localContext{actor: a}},
+		ownerOverride{panicValue: "invalid forwarding"},
+	} {
+		if cancel, err := StartTask(bad,
+			func(context.Context) (int, error) { t.Error("invalid worker started"); return 0, nil },
+			func(int, error) bool { t.Error("invalid completion ran"); return true }, nil,
+		); cancel != nil || !errors.Is(err, ErrSetup) {
+			t.Fatal(cancel, err)
+		}
+		if len(a.work) != 0 || a.reserved != 0 {
+			t.Fatal("invalid ownership reserved resources")
+		}
+		a.contextWrapper = func(Context) Context { return bad }
+		if ctx, err := a.newContext(context.Background()); ctx != nil || !errors.Is(err, ErrSetup) {
+			t.Fatal(ctx, err)
 		}
 	}
 }

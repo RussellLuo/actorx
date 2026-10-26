@@ -48,24 +48,24 @@ func testRuntimeChannelCalls(t *testing.T, ch actorx.Channel) {
 	var handled atomic.Int32
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 		return []actorx.Binding{
-			actorx.Handle(func(*actorx.Context, localQuery) (int, error) {
+			actorx.Handle(func(actorx.Context, localQuery) (int, error) {
 				handled.Add(1)
 				return 17, nil
 			}),
-			actorx.HandleMessage(func(*actorx.Context, localNotice) error {
+			actorx.HandleMessage(func(actorx.Context, localNotice) error {
 				handled.Add(1)
 				return nil
 			}),
-			actorx.HandleDeferred(func(ctx *actorx.Context, _ localDeferred, reply actorx.Reply[int]) error {
-				_, err := ctx.StartTask(
+			actorx.HandleDeferred(func(ctx actorx.Context, _ localDeferred, reply actorx.Reply[int]) error {
+				_, err := actorx.StartTask(ctx,
 					func(context.Context) (int, error) { return 23, nil },
 					func(value int, err error) bool { return reply.Complete(value, err) },
 					nil,
 				)
 				return err
 			}),
-			actorx.HandleStream(func(ctx *actorx.Context, _ localChunks, reply actorx.StreamReply[int]) error {
-				_, err := ctx.StartTask(func(work context.Context) (struct{}, error) {
+			actorx.HandleStream(func(ctx actorx.Context, _ localChunks, reply actorx.StreamReply[int]) error {
+				_, err := actorx.StartTask(ctx, func(work context.Context) (struct{}, error) {
 					for i := range 3 {
 						if err := reply.Write(work, i, 1); err != nil {
 							return struct{}{}, err

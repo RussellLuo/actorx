@@ -11,8 +11,8 @@ func TestLifecycleStartedLeavesOneSlotForTask(t *testing.T) {
 	rt := runtimeFor(t, WithMailboxCapacity(1), WithPendingLimit(1), WithCallLimit(1), WithTaskLimit(1))
 	delivered := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(ctx *Context, _ Started) error {
-			_, err := ctx.StartTask(func(context.Context) (int, error) { return 7, nil },
+		return []Binding{HandleMessage(func(ctx Context, _ Started) error {
+			_, err := StartTask(ctx, func(context.Context) (int, error) { return 7, nil },
 				func(v int, err error) bool {
 					if v != 7 || err != nil || ctx.State() != StateRunning {
 						t.Error("startup completion", v, err, ctx.State())
@@ -28,8 +28,8 @@ func TestLifecycleStartedLeavesOneSlotForTask(t *testing.T) {
 
 			// Fill the sole mailbox slot before Started returns. The lifecycle
 			// notice must neither consume that slot nor run the completion early.
-			ctx.actor.workers.Wait()
-			_, err = ctx.StartTask(func(context.Context) (int, error) {
+			ctx.actorContext().actor.workers.Wait()
+			_, err = StartTask(ctx, func(context.Context) (int, error) {
 				t.Error("exhausted startup capacity still launched work")
 				return 0, nil
 			}, func(int, error) bool { return true }, nil)
@@ -67,11 +67,11 @@ func TestLifecycleNoticesWithFullMailbox(t *testing.T) {
 			var order []string // The actor loop writes; channel barriers publish it.
 			a := spawnFor(t, rt, func() []Binding {
 				return []Binding{
-					HandleMessage(func(*Context, Started) error {
+					HandleMessage(func(Context, Started) error {
 						order = append(order, "started")
 						return nil
 					}),
-					HandleMessage(func(ctx *Context, _ wait) error {
+					HandleMessage(func(ctx Context, _ wait) error {
 						order = append(order, "handler")
 						close(entered)
 						<-ctx.Done()
@@ -79,16 +79,16 @@ func TestLifecycleNoticesWithFullMailbox(t *testing.T) {
 						<-release
 						return nil
 					}),
-					Handle(func(*Context, get) (int, error) {
+					Handle(func(Context, get) (int, error) {
 						order = append(order, "queued")
 						return 7, nil
 					}),
-					HandleMessage(func(*Context, Stopping) error {
+					HandleMessage(func(Context, Stopping) error {
 						order = append(order, "stopping")
 						close(stopping)
 						return nil
 					}),
-					HandleMessage(func(*Context, Stopped) error {
+					HandleMessage(func(Context, Stopped) error {
 						order = append(order, "stopped")
 						return nil
 					}),

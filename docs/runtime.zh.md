@@ -10,10 +10,10 @@
 
 | 绑定 | Handler 签名 | 支持的调用 |
 | --- | --- | --- |
-| `Handle` | `func(*actorx.Context, Q) (R, error)` | Send / Call |
-| `HandleMessage` | `func(*actorx.Context, M) error` | Send / Call；成功 Call 的结果是 nil |
-| `HandleDeferred` | `func(*actorx.Context, Q, actorx.Reply[R]) error` | Send / Call；返回 nil 后等待 Complete |
-| `HandleStream` | `func(*actorx.Context, Q, actorx.StreamReply[C]) error` | 仅 Stream |
+| `Handle` | `func(actorx.Context, Q) (R, error)` | Send / Call |
+| `HandleMessage` | `func(actorx.Context, M) error` | Send / Call；成功 Call 的结果是 nil |
+| `HandleDeferred` | `func(actorx.Context, Q, actorx.Reply[R]) error` | Send / Call；返回 nil 后等待 Complete |
+| `HandleStream` | `func(actorx.Context, Q, actorx.StreamReply[C]) error` | 仅 Stream |
 
 首参由 Runtime 提供，实现标准 `context.Context`，携带请求的期限、取消和值，以及所属 actor 的能力。调用方的 Addr 方法仍接收标准 context。
 
@@ -35,10 +35,10 @@ Call / Stream 在执行前已取消时可跳过 handler；执行中取消只能�
 
 ## 异步任务与延迟回复
 
-`ctx.StartTask(work, complete, discard)` 管理属于当前 actor 的异步任务。worker 使用输入快照，完成回调在 actor 上串行执行；完整接线见 [profile](../examples/profile/main.go)。
+`actorx.StartTask(ctx, work, complete, discard)` 管理属于当前 actor 的异步任务。worker 使用输入快照，完成回调在 actor 上串行执行；完整接线见 [profile](../examples/profile/main.go)。
 
 ```go
-cancel, err := ctx.StartTask(
+cancel, err := actorx.StartTask(ctx,
     func(ctx context.Context) (Result, error) {
         return client.Fetch(ctx) // 使用快照和并发安全客户端。
     },
@@ -65,7 +65,7 @@ cancel, err := ctx.StartTask(
 
 ```go
 taskCtx := ctx.WithContext(context.WithoutCancel(ctx))
-// 再用 taskCtx.StartTask(...)；actor 停止仍会取消任务。
+// 再用 actorx.StartTask(taskCtx, ...)；actor 停止仍会取消任务。
 ```
 
 `WithContext(parent)` 也可传入派生期限或 `context.Background()`。它只改变任务父 context，不改变原 Call / Stream 的等待期限。计时器、连接等待等放在受控 work 中，并在返回前释放。
@@ -94,13 +94,14 @@ err := addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"},
 
 | 配置 | 默认值 | 范围 |
 | --- | --- | --- |
+| `WithInstanceLimit(n)` | 0（不限） | Runtime 全部实例，含构造、停止中及 ctx.Spawn 子对象，完整退出后释放。 |
 | `WithMailboxCapacity(n)` | 64 | 每 actor 排队消息与预留完成槽。 |
 | `WithTaskLimit(n)` | 16 | 每 actor 未结清任务，包括等待交接的结果。 |
 | `WithPendingLimit(n)` | 256 | 每 actor 未完成请求，包括 Send。 |
 | `WithCallLimit(n)` | 256 | 整个 Runtime 的调用方 Call / Stream 关联。 |
 | `WithStreamLimits(items, chunkBytes)` | 8 / 64 KiB | 每流缓冲项数与每项声明大小。 |
 
-所有配置必须为正。消息或任务受理遇到容量不足立即返回 ErrFull；流窗口满时 Write 等待消费或取消。提高调用方总容量不会放宽任一目标的请求上限；Stream 的调用方名额保留到回调和缓冲消费结束。Runtime 不限制 Spawn 的实例总数，应用自行限制。
+除实例上限允许0表示不限外，其余配置必须为正；负实例上限返回 ErrSetup。消息或任务受理遇到容量不足立即返回 ErrFull；流窗口满时 Write 等待消费或取消。提高调用方总容量不会放宽任一目标的请求上限；Stream 的调用方名额保留到回调和缓冲消费结束。实例上限在读取 Bindings 前检查，满载 Spawn 返回零 Addr 与 ErrFull；失败回滚后可复用槽，Stopped 尚未完成时不能复用。
 
 同步信号演示见[容量与背压示例](../examples/README.zh.md#容量与背压)。
 
@@ -187,3 +188,54 @@ func (c *Counter) Bindings() []actorx.Binding {
 手写与生成绑定使用相同 API，满足同一个 Actor 接口；同一类型只保留一份 Bindings。四类 handler 的选择见[绑定与调用](#绑定与调用)。
 
 Bindings 只构造条目，不执行 handler、读取状态或取得资源；为每个实例绑定自己的 receiver。支持静态描述时，还需遵守[nil receiver 约定](#静态读取消息描述)。完整手写示例见 [example_describe_test.go](../example_describe_test.go)。
+
+## Context 扩展与迁移
+
+`actorx.Context` 是接口，包含标准 context 方法以及 WithContext、Stop、Spawn、State。核心持有私有本地实现；零值是 nil 接口，不能直接调用方法。`StartTask` 在预留资源前校验归属，nil、typed-nil、空嵌入和无执行归属均返回 ErrSetup。
+
+创建 Runtime 时安装 `WithContextFactory`。Spawn 在安装有效 Bindings 后、Channel.Bind 和 Started 前，用本次 Actor 调用工厂一次，保存返回的 `ContextWrapper`；业务 Actor 只需 Bindings。例如，应用可以捕获共享服务：
+
+```go
+type appContext struct {
+    actorx.Context
+    service *Service // 不可变，或由其所有者同步。
+}
+
+factory := func(actorx.Actor) (actorx.ContextWrapper, error) {
+    return func(ctx actorx.Context) actorx.Context {
+        return &appContext{Context: ctx, service: service}
+    }, nil
+}
+rt, err := actorx.NewRuntime(initCtx, actorx.WithContextFactory(factory))
+```
+
+NewRuntime 只保存策略，不调用工厂。未配置时保持纯本地行为；显式 nil 的最终工厂在打开 Channel 前返回 ErrSetup。重复选项由后者覆盖，不叠加工厂链。已配置工厂必须返回非 nil wrapper，需要保持原 Context 时返回恒等函数。Bindings 无效或实例预算已满时不调用工厂，Describe 也不调用。
+
+工厂可读取应用自己的私有 Actor 适配器，捕获稳定实例环境。wrapper 须嵌入本次提供的有效 `actorx.Context`，包外不能从头实现私有归属方法。handler 仍接收 `actorx.Context`，按需断言可选能力。生成器识别该接口及其类型别名，拒绝旧指针签名和下游扩展接口；绑定选择、生成命令和 `-check` 均保持原样。已删除 ContextDecorator 及其自动检测。
+
+工厂和 wrapper 均须有界，不做 I/O、不获取资源、不启动任务、不调用 handler、不读写业务可变状态；环境在安装后保持不变或由所有者同步。并发 Spawn 可以并发调用同一个工厂。工厂调用、包装及私有归属提取均不持 Runtime/actor 内部锁。核心不提供工厂资源清理协议，环境生命周期由其所有者负责；不能在工厂中等待当前实例启动或本 Runtime.Close。
+
+wrapper 必须保留期限、取消和值，指向本次提供的同一个本地上下文；其他实例或旧调用的 Context 会被拒绝。WithContext 创建新的本地上下文并调用同一已保存 wrapper，不重跑工厂、不重新读取 Actor、不叠加旧包装层。Background 保留动态能力，nil parent 会 panic。本地 ctx.Spawn 的子对象及孙对象用自己的 Actor 经过同一 Runtime 工厂；实例环境独立，不复制父 wrapper，也不新增停止传播。
+
+| 工厂 / 包装失败位置 | 行为 |
+| --- | --- |
+| Spawn 工厂绑定 | 不调用 Channel.Bind 或生命周期 handler；返回零 Addr，回滚完整退出后释放实例名额。 |
+| Started | 跳过 handler，Spawn 进入原生命周期失败回滚。 |
+| 普通 handler | 跳过 handler，当前请求以设置错误结算，记录错误并停止实例。 |
+| WithContext | panic 携带设置错误；发生在 handler 中时沿用其原 panic 边界。 |
+| Stopping / Stopped | 记录错误并跳过该回调，继续后续清理和退出阶段。 |
+
+无效返回值产生 ErrSetup；工厂 error 与 ErrSetup 组合并保留原错误链；工厂或 wrapper panic 保留 PanicError 和堆栈，并与 ErrSetup 组合。仅在私有归属提取边界将空嵌入转发 panic 视为无效上下文；work、complete、discard 保持原 panic 边界。handler 内的 panic 外层仍为 PanicError，不承诺其错误链匹配 ErrSetup。
+
+退出包装失败不会绕过 worker、discard 或完整退出预算。如果被跳过的 Stopping 原本负责解除 worker 阻塞，Wait/Close 可以超时，实例名额仍被占用，直到实际工作结束。串行 complete 使用原闭包及捕获的上下文，不额外重建或包装。工厂阻塞期间仍占用实例预算，并计入 Spawn/Close 等待；工厂返回后沿用原关闭复查，Runtime 已关闭时不进入 Started、不发布地址。
+
+| 旧 API | 当前 API |
+| --- | --- |
+| `func(ctx *actorx.Context, ...)` | `func(ctx actorx.Context, ...)` |
+| `ctx.StartTask(work, complete, discard)` | `actorx.StartTask(ctx, work, complete, discard)` |
+| `ctx.Context` | 直接把 `ctx` 传给标准 `context.Context` 参数。 |
+| `actorx.Context{}` / `&actorx.Context{}` | 从 Runtime 取得有效 Context；接口零值是 nil。 |
+| Runtime/实例 association API | 配置 WithContextFactory，在返回的 wrapper 中嵌入本次提供的 Context。 |
+| Actor ContextDecorator | 将实例绑定移入 ContextFactory，将每次执行包装移入 ContextWrapper。 |
+
+已移除 WithRuntimeAssociation、Runtime.SpawnAssociated、Context.RuntimeAssociation 和 Context.InstanceAssociation。StartTask 从传入上下文取得取消、期限和值，并保留原 actor 归属；State 仍是本地生命周期快照，Spawn 仍是本地创建。

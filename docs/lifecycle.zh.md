@@ -23,20 +23,20 @@ Started 使用实例生命周期 context，可启动 StartTask，但不能等待
 
 ## 绑定生命周期通知
 
-普通具名方法接收对应事件类型，签名统一为 `func(*actorx.Context, Event) error`：
+普通具名方法接收对应事件类型，签名统一为 `func(actorx.Context, Event) error`：
 
 ```go
-func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
+func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
     s.messages = 0
     return nil
 }
 
-func (s *Session) Stopping(ctx *actorx.Context, msg actorx.Stopping) error {
+func (s *Session) Stopping(ctx actorx.Context, msg actorx.Stopping) error {
     // 解除 worker 的阻塞，不在这里等待这些 worker。
     return nil
 }
 
-func (s *Session) Stopped(ctx *actorx.Context, msg actorx.Stopped) error {
+func (s *Session) Stopped(ctx actorx.Context, msg actorx.Stopped) error {
     // worker、未交接结果回滚和收件解绑已结束，完成最终收尾。
     return nil
 }
@@ -111,7 +111,7 @@ Bindings 不取得资源。框架不提供业务清理登记表；多资源的�
 ## 在 handler 内创建 actor
 
 ```go
-func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
+func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
     worker, err := ctx.Spawn(&Worker{})
     if err != nil {
         return err // Worker 已完整回滚；Session 选择传播失败。

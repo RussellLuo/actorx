@@ -65,7 +65,7 @@ func waitExitFor(t *testing.T, addr Addr) Exit {
 func TestAddrWaitPassiveConcurrentAndRetry(t *testing.T) {
 	rt := runtimeFor(t)
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{Handle(func(*Context, get) (int, error) { return 9, nil })}
+		return []Binding{Handle(func(Context, get) (int, error) { return 9, nil })}
 	})
 	addr := a.addr()
 	copyByValue := make(chan Addr, 1)
@@ -173,9 +173,9 @@ func TestAddrWaitStartupFailureWaitsForRollback(t *testing.T) {
 	go func() {
 		a, err := rt.Spawn(bindingsFunc(func() []Binding {
 			return []Binding{
-				HandleMessage(func(ctx *Context, _ Started) error {
-					early <- ctx.actor
-					_, err := ctx.StartTask(func(context.Context) (int, error) {
+				HandleMessage(func(ctx Context, _ Started) error {
+					early <- ctx.actorContext().actor
+					_, err := StartTask(ctx, func(context.Context) (int, error) {
 						<-workerRelease
 						return 7, nil
 					}, func(int, error) bool {
@@ -188,11 +188,11 @@ func TestAddrWaitStartupFailureWaitsForRollback(t *testing.T) {
 					})
 					return errors.Join(failure, err)
 				}),
-				HandleMessage(func(*Context, Stopping) error {
+				HandleMessage(func(Context, Stopping) error {
 					close(stopping)
 					panic("cleanup failed")
 				}),
-				HandleMessage(func(*Context, Stopped) error {
+				HandleMessage(func(Context, Stopped) error {
 					close(final)
 					<-finalRelease
 					return finalFailure
@@ -333,8 +333,8 @@ func TestAddrWaitAfterStartupTaskExit(t *testing.T) {
 			failure := errors.New("asynchronous initialization failed")
 			a := spawnFor(t, rt, func() []Binding {
 				return []Binding{
-					HandleMessage(func(ctx *Context, _ Started) error {
-						_, err := ctx.StartTask(func(context.Context) (int, error) {
+					HandleMessage(func(ctx Context, _ Started) error {
+						_, err := StartTask(ctx, func(context.Context) (int, error) {
 							<-workRelease
 							return 0, failure
 						}, func(_ int, err error) bool {
@@ -348,7 +348,7 @@ func TestAddrWaitAfterStartupTaskExit(t *testing.T) {
 						return err
 					}),
 					// The application reports Ready separately from startup success.
-					Handle(func(*Context, get) (bool, error) { return false, nil }),
+					Handle(func(Context, get) (bool, error) { return false, nil }),
 				}
 			})
 			if call[bool](t, a, get{}) {
@@ -381,7 +381,7 @@ func TestAddrWaitEnteredStopBeforeStarted(t *testing.T) {
 			var order []string
 			a := newActor(rt)
 			if err := a.install([]Binding{
-				HandleMessage(func(ctx *Context, _ Started) error {
+				HandleMessage(func(ctx Context, _ Started) error {
 					if ctx.Err() != context.Canceled || ctx.State() != StateStopping {
 						t.Error("Started missed pre-dispatch cancellation")
 					}
@@ -391,11 +391,11 @@ func TestAddrWaitEnteredStopBeforeStarted(t *testing.T) {
 					<-release
 					return failure
 				}),
-				HandleMessage(func(*Context, Stopping) error {
+				HandleMessage(func(Context, Stopping) error {
 					order = append(order, "Stopping")
 					return nil
 				}),
-				HandleMessage(func(*Context, Stopped) error {
+				HandleMessage(func(Context, Stopped) error {
 					order = append(order, "Stopped")
 					return nil
 				}),
@@ -471,7 +471,7 @@ func TestAddrWaitRecordDoesNotRetainActorOrRebind(t *testing.T) {
 	}
 
 	replacement := spawnFor(t, rt, func() []Binding {
-		return []Binding{Handle(func(*Context, get) (int, error) { return 11, nil })}
+		return []Binding{Handle(func(Context, get) (int, error) { return 11, nil })}
 	})
 	if addr.id == replacement.addr().id || waitExitFor(t, addr).Reason != nil || call[int](t, replacement, get{}) != 11 {
 		t.Fatal("old record rebound to new instance")

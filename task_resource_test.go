@@ -28,13 +28,13 @@ func TestResourceCompletionPanicSharesReleaseWithLifecycle(t *testing.T) {
 	}
 	var adopted *os.File
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(*Context, Stopping) error {
+		return []Binding{HandleMessage(func(Context, Stopping) error {
 			if adopted != nil {
 				release()
 			}
 			return nil
-		}), HandleMessage(func(ctx *Context, _ get) error {
-			_, err := ctx.WithContext(context.Background()).StartTask(
+		}), HandleMessage(func(ctx Context, _ get) error {
+			_, err := StartTask(ctx.WithContext(context.Background()),
 				func(context.Context) (*os.File, error) {
 					return file, nil
 				},

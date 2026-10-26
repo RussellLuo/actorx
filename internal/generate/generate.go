@@ -444,7 +444,7 @@ func namedType(t types.Type, path, name string) bool {
 func classify(sig *types.Signature) (string, types.Type, error) {
 	invalid := func() (string, types.Type, error) {
 		return "", nil, fmt.Errorf(
-			"expected (*actorx.Context, Q) (R, error), (*actorx.Context, M) error, or an explicit Reply/StreamReply handler",
+			"expected (actorx.Context, Q) (R, error), (actorx.Context, M) error, or an explicit Reply/StreamReply handler",
 		)
 	}
 
@@ -453,8 +453,7 @@ func classify(sig *types.Signature) (string, types.Type, error) {
 		return invalid()
 	}
 
-	ctx, ok := types.Unalias(p.At(0).Type()).(*types.Pointer)
-	if !ok || !namedType(ctx.Elem(), ActorPath, "Context") {
+	if !namedType(p.At(0).Type(), ActorPath, "Context") {
 		return invalid()
 	}
 
@@ -479,7 +478,7 @@ func classify(sig *types.Signature) (string, types.Type, error) {
 	for _, event := range []string{"Started", "Stopping", "Stopped"} {
 		if namedType(base, ActorPath, event) {
 			if !types.Identical(q, base) || p.Len() != 2 || r.Len() != 1 || !types.Identical(r.At(0).Type(), errType) {
-				return "", nil, fmt.Errorf("lifecycle message handler requires (*actorx.Context, actorx.%s) error", event)
+				return "", nil, fmt.Errorf("lifecycle message handler requires (actorx.Context, actorx.%s) error", event)
 			}
 
 			return "HandleMessage", q, nil

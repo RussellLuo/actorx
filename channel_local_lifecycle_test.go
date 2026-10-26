@@ -61,7 +61,7 @@ func TestRuntimeChannelOwnershipAndLocalControl(t *testing.T) {
 	}
 
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.Handle(func(*actorx.Context, localQuery) (int, error) { return 17, nil })}
+		return []actorx.Binding{actorx.Handle(func(actorx.Context, localQuery) (int, error) { return 17, nil })}
 	}))
 	if err != nil {
 		t.Fatal("owner damaged by duplicate claim/cancellation", err)

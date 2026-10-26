@@ -37,7 +37,7 @@ type Add struct{ N int }
 //actorx:actor
 type Counter struct{ n int }
 
-func (c *Counter) Add(_ *actorx.Context, msg Add) (int, error) {
+func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
     c.n += msg.N
     return c.n, nil
 }

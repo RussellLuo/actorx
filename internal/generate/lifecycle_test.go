@@ -24,13 +24,13 @@ type Stop struct{}
 %s
 type A struct{}
 %s
-func (*A) Initialize(*ax.Context, Begin) error { return nil }
+func (*A) Initialize(ax.Context, Begin) error { return nil }
 %s
-func (*A) Unblock(*ax.Context, ax.Stopping) error { return nil }
+func (*A) Unblock(ax.Context, ax.Stopping) error { return nil }
 %s
-func (*A) Finalize(*ax.Context, ax.Stopped) error { return nil }
+func (*A) Finalize(ax.Context, ax.Stopped) error { return nil }
 %s
-func (*A) Stop(*ax.Context, Stop) error { return nil }
+func (*A) Stop(ax.Context, Stop) error { return nil }
 var _ ax.Actor = (*A)(nil)
 `, actorMarker, methodMarker, methodMarker, methodMarker, methodMarker)})
 			if err := Run(dir, "actorx.gen.go", false); err != nil {
@@ -55,10 +55,10 @@ var _ ax.Actor = (*A)(nil)
 func TestLifecycleGeneratorRejectsUnsupportedBindings(t *testing.T) {
 	for _, event := range []string{"Started", "Stopping", "Stopped"} {
 		for _, signature := range []string{
-			"(*actorx.Context, *actorx.%s) error",
-			"(*actorx.Context, actorx.%s) (int, error)",
-			"(*actorx.Context, actorx.%s, actorx.Reply[int]) error",
-			"(*actorx.Context, actorx.%s, actorx.StreamReply[int]) error",
+			"(actorx.Context, *actorx.%s) error",
+			"(actorx.Context, actorx.%s) (int, error)",
+			"(actorx.Context, actorx.%s, actorx.Reply[int]) error",
+			"(actorx.Context, actorx.%s, actorx.StreamReply[int]) error",
 		} {
 			t.Run(event+signature, func(t *testing.T) {
 				sig := fmt.Sprintf(signature, event)
@@ -83,8 +83,8 @@ func (*A) ` + event + sig + " { " + body + " }\n"})
 	}
 
 	for _, declaration := range []string{
-		"type Alias = actorx.Started\nfunc (*A) One(*actorx.Context, actorx.Started) error { return nil }\nfunc (*A) Two(*actorx.Context, Alias) error { return nil }",
-		"type Pointer *actorx.Started\nfunc (*A) One(*actorx.Context, Pointer) error { return nil }",
+		"type Alias = actorx.Started\nfunc (*A) One(actorx.Context, actorx.Started) error { return nil }\nfunc (*A) Two(actorx.Context, Alias) error { return nil }",
+		"type Pointer *actorx.Started\nfunc (*A) One(actorx.Context, Pointer) error { return nil }",
 	} {
 		dir := fixture(t, map[string]string{"a.go": "package fixture\nimport \"github.com/RussellLuo/actorx\"\n//actorx:actor\ntype A struct{}\n" + declaration})
 		if err := Run(dir, "actorx.gen.go", false); err == nil {

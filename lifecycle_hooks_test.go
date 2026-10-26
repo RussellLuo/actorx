@@ -24,7 +24,7 @@ func releaseAtCleanup(t *testing.T, ch chan struct{}) {
 func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 	type startupStream struct{}
 	rt := runtimeFor(t)
-	ready := make(chan *Context, 1)
+	ready := make(chan Context, 1)
 	releaseStart := make(chan struct{})
 	final := make(chan struct{})
 	releaseFinal := make(chan struct{})
@@ -36,13 +36,13 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 	go func() {
 		a, err := rt.Spawn(bindingsFunc(func() []Binding {
 			return []Binding{
-				HandleMessage(func(ctx *Context, _ Started) error {
+				HandleMessage(func(ctx Context, _ Started) error {
 					order = append(order, "started")
 					if ctx.State() != StateStarted || ctx.Err() != nil {
 						t.Error("incorrect startup context")
 					}
 
-					_, err := ctx.StartTask(func(context.Context) (int, error) { return 7, nil },
+					_, err := StartTask(ctx, func(context.Context) (int, error) { return 7, nil },
 						func(v int, err error) bool {
 							if ctx.State() != StateRunning || v != 7 || err != nil {
 								t.Error("incorrect startup completion")
@@ -55,7 +55,7 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 					<-releaseStart
 					return err
 				}),
-				HandleMessage(func(ctx *Context, _ get) error {
+				HandleMessage(func(ctx Context, _ get) error {
 					if ctx.State() != StateRunning {
 						t.Error("handler outside Running")
 					}
@@ -63,16 +63,16 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 					order = append(order, "message")
 					return nil
 				}),
-				HandleStream(func(*Context, startupStream, StreamReply[int]) error {
+				HandleStream(func(Context, startupStream, StreamReply[int]) error {
 					t.Error("stream admitted during startup")
 					return nil
 				}),
-				HandleMessage(func(ctx *Context, msg Stopping) error {
+				HandleMessage(func(ctx Context, msg Stopping) error {
 					if ctx.State() != StateStopping || ctx.Err() != context.Canceled || !errors.Is(msg.Reason, cause) {
 						t.Error("incorrect Stopping context/reason")
 					}
 
-					_, err := ctx.WithContext(context.Background()).StartTask(
+					_, err := StartTask(ctx.WithContext(context.Background()),
 						func(context.Context) (int, error) { return 0, nil },
 						func(int, error) bool { return true },
 						nil,
@@ -84,7 +84,7 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 					order = append(order, "stopping")
 					return nil
 				}),
-				HandleMessage(func(ctx *Context, msg Stopped) error {
+				HandleMessage(func(ctx Context, msg Stopped) error {
 					if ctx.State() != StateStopped || ctx.Err() != context.Canceled || !errors.Is(msg.Reason, cause) {
 						t.Error("incorrect Stopped context/reason")
 					}
@@ -103,7 +103,7 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 		spawned <- a
 	}()
 	ctx := <-ready
-	a := ctx.actor
+	a := ctx.actorContext().actor
 	// Force the startup completion into the mailbox before opening admission.
 	a.workers.Wait()
 	for _, m := range []mode{sendMode, callMode, streamMode} {
@@ -205,9 +205,9 @@ func TestLifecycleStartedFailureRollsBackLateTask(t *testing.T) {
 			var order []string
 			_, err := rt.Spawn(bindingsFunc(func() []Binding {
 				return []Binding{
-					HandleMessage(func(ctx *Context, _ Started) error {
-						actor = ctx.actor
-						_, err := ctx.StartTask(func(ctx context.Context) (int, error) {
+					HandleMessage(func(ctx Context, _ Started) error {
+						actor = ctx.actorContext().actor
+						_, err := StartTask(ctx, func(ctx context.Context) (int, error) {
 							<-unblock // Stopping must unblock before worker waiting.
 							if !tc.queued && ctx.Err() != context.Canceled {
 								t.Error("startup worker not cancelled")
@@ -229,7 +229,7 @@ func TestLifecycleStartedFailureRollsBackLateTask(t *testing.T) {
 						}
 						if tc.queued {
 							close(unblock)
-							ctx.actor.workers.Wait() // Force a completion queued before startup failure.
+							ctx.actorContext().actor.workers.Wait() // Force a completion queued before startup failure.
 						}
 						if tc.panicStart {
 							panic(failure)
@@ -237,7 +237,7 @@ func TestLifecycleStartedFailureRollsBackLateTask(t *testing.T) {
 
 						return failure
 					}),
-					HandleMessage(func(ctx *Context, msg Stopping) error {
+					HandleMessage(func(ctx Context, msg Stopping) error {
 						if msg.Reason == nil || ctx.State() != StateStopping {
 							t.Error(msg.Reason, ctx.State())
 						}
@@ -249,7 +249,7 @@ func TestLifecycleStartedFailureRollsBackLateTask(t *testing.T) {
 
 						return stopFailure
 					}),
-					HandleMessage(func(ctx *Context, msg Stopped) error {
+					HandleMessage(func(ctx Context, msg Stopped) error {
 						if discarded.Load() != 1 || delivered.Load() != 0 {
 							t.Error("unsettled startup result")
 						}
@@ -290,7 +290,7 @@ func TestLifecycleStopOrCloseDuringStarted(t *testing.T) {
 	for _, closeRuntime := range []bool{false, true} {
 		t.Run(map[bool]string{false: "Stop", true: "Close"}[closeRuntime], func(t *testing.T) {
 			rt := runtimeFor(t)
-			ready := make(chan *Context, 1)
+			ready := make(chan Context, 1)
 			cancelled := make(chan struct{})
 			release := make(chan struct{})
 			releaseAtCleanup(t, release)
@@ -299,7 +299,7 @@ func TestLifecycleStopOrCloseDuringStarted(t *testing.T) {
 			go func() {
 				_, err := rt.Spawn(bindingsFunc(func() []Binding {
 					return []Binding{
-						HandleMessage(func(ctx *Context, _ Started) error {
+						HandleMessage(func(ctx Context, _ Started) error {
 							ready <- ctx
 							<-ctx.Done()
 							close(cancelled)
@@ -310,11 +310,11 @@ func TestLifecycleStopOrCloseDuringStarted(t *testing.T) {
 
 							return nil
 						}),
-						HandleMessage(func(*Context, Stopping) error {
+						HandleMessage(func(Context, Stopping) error {
 							hooks.Add(1)
 							return nil
 						}),
-						HandleMessage(func(*Context, Stopped) error {
+						HandleMessage(func(Context, Stopped) error {
 							hooks.Add(1)
 							return nil
 						}),
@@ -331,7 +331,7 @@ func TestLifecycleStopOrCloseDuringStarted(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				if err := ctx.actor.addr().Stop(nil); err != nil {
+				if err := ctx.actorContext().actor.addr().Stop(nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -356,7 +356,7 @@ func TestLifecycleStopOrCloseDuringStarted(t *testing.T) {
 				t.Fatal(hooks.Load(), ctx.State())
 			}
 
-			await(t, ctx.actor.exit.done)
+			await(t, ctx.actorContext().actor.exit.done)
 		})
 	}
 }
@@ -369,9 +369,9 @@ func TestLifecyclePreStartFailureSkipsHooks(t *testing.T) {
 			hooks := 0
 			_, err := rt.Spawn(bindingsFunc(func() []Binding {
 				entries := []Binding{
-					HandleMessage(func(*Context, Started) error { hooks++; return nil }),
-					HandleMessage(func(*Context, Stopping) error { hooks++; return nil }),
-					HandleMessage(func(*Context, Stopped) error { hooks++; return nil }),
+					HandleMessage(func(Context, Started) error { hooks++; return nil }),
+					HandleMessage(func(Context, Stopping) error { hooks++; return nil }),
+					HandleMessage(func(Context, Stopped) error { hooks++; return nil }),
 				}
 				if stage == "panic" {
 					panic("bindings failed")
@@ -418,7 +418,7 @@ func (ch *preStartChannel) Bind(ctx context.Context, id string, r Receiver) (fun
 func TestLifecycleBindingAndForgeryRejections(t *testing.T) {
 	type startedPointer *Started
 	var started atomic.Int32
-	hook := HandleMessage(func(*Context, Started) error {
+	hook := HandleMessage(func(Context, Started) error {
 		started.Add(1)
 		return nil
 	})
@@ -427,12 +427,12 @@ func TestLifecycleBindingAndForgeryRejections(t *testing.T) {
 		{HandleMessage[Started](nil)},
 		{HandleMessage[Stopping](nil)},
 		{HandleMessage[Stopped](nil)},
-		{HandleMessage(func(*Context, *Started) error { return nil })},
-		{HandleMessage(func(*Context, **Stopping) error { return nil })},
-		{HandleMessage(func(*Context, startedPointer) error { return nil })},
-		{Handle(func(*Context, Stopped) (int, error) { return 0, nil })},
-		{HandleDeferred(func(*Context, Started, Reply[int]) error { return nil })},
-		{HandleStream(func(*Context, Stopping, StreamReply[int]) error { return nil })},
+		{HandleMessage(func(Context, *Started) error { return nil })},
+		{HandleMessage(func(Context, **Stopping) error { return nil })},
+		{HandleMessage(func(Context, startedPointer) error { return nil })},
+		{Handle(func(Context, Stopped) (int, error) { return 0, nil })},
+		{HandleDeferred(func(Context, Started, Reply[int]) error { return nil })},
+		{HandleStream(func(Context, Stopping, StreamReply[int]) error { return nil })},
 	} {
 		rt := runtimeFor(t)
 		if _, err := rt.Spawn(bindingsFunc(func() []Binding { return bindings })); !errors.Is(err, ErrSetup) {
@@ -442,7 +442,7 @@ func TestLifecycleBindingAndForgeryRejections(t *testing.T) {
 
 	rt := runtimeFor(t, WithCallLimit(1), WithPendingLimit(1))
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{hook, Handle(func(*Context, get) (int, error) { return 7, nil })}
+		return []Binding{hook, Handle(func(Context, get) (int, error) { return 7, nil })}
 	})
 	for _, msg := range []any{
 		Started{},
@@ -524,8 +524,8 @@ func TestLifecycleExitPanicsContinueAfterBindingRelease(t *testing.T) {
 		addr, err := rt.Spawn(bindingsFunc(func() []Binding {
 			// An actor with no Started binding still enters the startup stage.
 			return []Binding{
-				HandleMessage(func(*Context, Stopping) error { defer func() { cleaned = true }(); panic("stopping panic") }),
-				HandleMessage(func(ctx *Context, msg Stopped) error {
+				HandleMessage(func(Context, Stopping) error { defer func() { cleaned = true }(); panic("stopping panic") }),
+				HandleMessage(func(ctx Context, msg Stopped) error {
 					if !cleaned || d.released.Load() != 1 || ctx.State() != StateStopped {
 						t.Error("finalized before cleanup/release")
 					}
@@ -554,7 +554,7 @@ func TestLifecycleExitPanicsContinueAfterBindingRelease(t *testing.T) {
 
 func TestLifecycleStoppingWaitsForActiveHandler(t *testing.T) {
 	rt := runtimeFor(t)
-	active := make(chan *Context, 1)
+	active := make(chan Context, 1)
 	observedStop := make(chan struct{})
 	release := make(chan struct{})
 	releaseAtCleanup(t, release)
@@ -562,7 +562,7 @@ func TestLifecycleStoppingWaitsForActiveHandler(t *testing.T) {
 	var handled atomic.Int32
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ wait) error {
+			HandleMessage(func(ctx Context, _ wait) error {
 				active <- ctx
 				<-ctx.Done()
 				if ctx.State() != StateStopping {
@@ -573,11 +573,11 @@ func TestLifecycleStoppingWaitsForActiveHandler(t *testing.T) {
 				<-release
 				return nil
 			}),
-			HandleMessage(func(*Context, get) error {
+			HandleMessage(func(Context, get) error {
 				handled.Add(1)
 				return nil
 			}),
-			HandleMessage(func(*Context, Stopping) error {
+			HandleMessage(func(Context, Stopping) error {
 				stoppedHooks.Add(1)
 				return nil
 			}),
@@ -609,7 +609,7 @@ func TestLifecycleClassificationAllowsRecursivePointerMessages(t *testing.T) {
 	type recursive *recursive
 	rt := runtimeFor(t)
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(*Context, recursive) error { return nil })}
+		return []Binding{HandleMessage(func(Context, recursive) error { return nil })}
 	})
 	call[any](t, a, recursive(nil))
 }

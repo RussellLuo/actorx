@@ -22,23 +22,26 @@ type taskWork struct {
 //
 // The task inherits ctx's cancellation, deadline and values; actor shutdown
 // always cancels it. The returned CancelFunc requests cancellation without
-// waiting for completion. A nil or unassociated Context returns ErrSetup;
+// waiting for completion. A nil or invalid Context returns ErrSetup without
+// reserving resources, including wrappers with nil embedded ownership;
 // work and complete must be non-nil. ErrFull means no worker was started.
 //
 // Unblock workers in Stopping; all lifecycle handlers must be bounded.
 // Before returning true, complete must leave value safe for discard if it
 // panics. If it stores value earlier, discard and lifecycle cleanup must share an
 // idempotent release operation; the runtime cannot undo business field writes.
-func (ctx *Context) StartTask[T any](
+func StartTask[T any](
+	ctx Context,
 	work func(context.Context) (T, error),
 	complete func(T, error) bool,
 	discard func(T),
 ) (context.CancelFunc, error) {
-	if ctx == nil || ctx.actor == nil || ctx.Context == nil || work == nil || complete == nil {
+	local := contextOwner(ctx)
+	if local == nil || work == nil || complete == nil {
 		return nil, ErrSetup
 	}
 
-	a := ctx.actor
+	a := local.actor
 
 	a.mu.Lock()
 	if !a.entered || a.stopped {
@@ -59,7 +62,7 @@ func (ctx *Context) StartTask[T any](
 	}
 
 	// Reserve completion capacity before the worker can produce a value.
-	jobCtx, cancel := context.WithCancel(ctx.Context)
+	jobCtx, cancel := context.WithCancel(ctx)
 	stopOwner := context.AfterFunc(a.ctx, cancel)
 	w := &taskWork{}
 	a.work[w] = struct{}{}

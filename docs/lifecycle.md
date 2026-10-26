@@ -23,20 +23,20 @@ Failure before startup entry skips lifecycle notices and rolls back runtime reso
 
 ## Binding lifecycle notices
 
-Named methods receive event types with the signature `func(*actorx.Context, Event) error`:
+Named methods receive event types with the signature `func(actorx.Context, Event) error`:
 
 ```go
-func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
+func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
     s.messages = 0
     return nil
 }
 
-func (s *Session) Stopping(ctx *actorx.Context, msg actorx.Stopping) error {
+func (s *Session) Stopping(ctx actorx.Context, msg actorx.Stopping) error {
     // Unblock workers; do not wait for those workers here.
     return nil
 }
 
-func (s *Session) Stopped(ctx *actorx.Context, msg actorx.Stopped) error {
+func (s *Session) Stopped(ctx actorx.Context, msg actorx.Stopped) error {
     // Workers, unadopted-result rollback, and binding release finished.
     return nil
 }
@@ -111,7 +111,7 @@ See the [runtime reference](runtime.md#tasks-and-deferred-replies) for task adop
 ## Creating actors from a handler
 
 ```go
-func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
+func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
     worker, err := ctx.Spawn(&Worker{})
     if err != nil {
         return err // Worker rollback finished; Session chooses to propagate.

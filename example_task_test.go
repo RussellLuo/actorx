@@ -36,18 +36,18 @@ func (f *fileActor) Bindings() []actorx.Binding {
 	return []actorx.Binding{actorx.HandleDeferred(f.Open), actorx.HandleMessage(f.Stopped)}
 }
 
-func (f *fileActor) Stopped(*actorx.Context, actorx.Stopped) error {
+func (f *fileActor) Stopped(actorx.Context, actorx.Stopped) error {
 	f.file.release()
 	return nil
 }
 
-func (f *fileActor) Open(ctx *actorx.Context, _ openFile, reply actorx.Reply[string]) error {
+func (f *fileActor) Open(ctx actorx.Context, _ openFile, reply actorx.Reply[string]) error {
 	if f.file != nil || f.opening {
 		return fmt.Errorf("file already acquired")
 	}
 
 	f.opening = true
-	_, err := ctx.StartTask(
+	_, err := actorx.StartTask(ctx,
 		func(context.Context) (*ownedFile, error) {
 			file, err := os.CreateTemp("", "actorx-resource-*")
 			if err != nil {
@@ -76,7 +76,7 @@ func (f *fileActor) Open(ctx *actorx.Context, _ openFile, reply actorx.Reply[str
 	return err
 }
 
-func ExampleContext_StartTask() {
+func ExampleStartTask() {
 	rt, err := actorx.NewRuntime(context.Background())
 	if err != nil {
 		panic(err)

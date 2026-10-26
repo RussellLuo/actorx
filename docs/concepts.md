@@ -34,7 +34,7 @@ Bindings determine supported modes; see the [runtime reference](runtime.md#bindi
 
 ## Asynchronous work
 
-Put slow I/O or computation in `ctx.StartTask(work, complete, discard)` and return promptly from the handler:
+Put slow I/O or computation in `actorx.StartTask(ctx, work, complete, discard)` and return promptly from the handler:
 
 ```text
 handler: read state and prepare an input snapshot
@@ -68,3 +68,9 @@ Runtime defaults to the root package's LocalChannel, routing requests through th
 Tooling features such as [reading message metadata](runtime.md#reading-message-metadata) live in the runtime reference and are not prerequisites for writing a first actor.
 
 Next, follow the [example guide](../examples/README.md) for asynchronous lookup, streaming, and actor collaboration.
+
+## Context capabilities
+
+`actorx.Context` is an interface supplied by Runtime. It embeds standard `context.Context` and provides WithContext, Stop, Spawn, and State. Start owned work through `actorx.StartTask(ctx, ...)`. Spawn creates an independent local instance; State describes its local lifecycle.
+
+Configure `WithContextFactory` on a Runtime to add optional capabilities. Spawn calls the factory once with the instance Actor, then uses its returned `ContextWrapper` for each execution. Extensions embed the supplied Context and retain its private execution ownership. WithContext replaces the parent and reuses that wrapper, including with Background; local children use the same factory with their own Actor. See the [extension and migration rules](runtime.md#context-extensions-and-migration).

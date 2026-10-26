@@ -19,7 +19,7 @@ type Format struct{ Text string }
 //actorx:actor
 type Worker struct{}
 
-func (w *Worker) Format(_ *actorx.Context, msg Format) (string, error) {
+func (w *Worker) Format(_ actorx.Context, msg Format) (string, error) {
 	return strings.ToUpper(msg.Text), nil
 }
 
@@ -28,7 +28,7 @@ func (w *Worker) Format(_ *actorx.Context, msg Format) (string, error) {
 //actorx:actor
 type Session struct{ worker actorx.Addr }
 
-func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
+func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
 	worker, err := ctx.Spawn(&Worker{})
 	if err != nil {
 		return err // Worker rollback is complete; Session chooses to fail too.
@@ -38,12 +38,12 @@ func (s *Session) Started(ctx *actorx.Context, _ actorx.Started) error {
 	return nil
 }
 
-func (s *Session) Receive(ctx *actorx.Context, msg Message) (string, error) {
+func (s *Session) Receive(ctx actorx.Context, msg Message) (string, error) {
 	// This dependency points one way; Worker never calls back into Session.
 	return s.worker.Call[string](ctx, Format{Text: msg.Text})
 }
 
-func (s *Session) Stopping(_ *actorx.Context, _ actorx.Stopping) error {
+func (s *Session) Stopping(_ actorx.Context, _ actorx.Stopping) error {
 	if s.worker.IsZero() {
 		return nil // Worker startup failed before its address was assigned.
 	}

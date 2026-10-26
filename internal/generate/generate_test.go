@@ -44,12 +44,12 @@ type R struct{}
 
 type Embedded struct{}
 
-func (*Embedded) Promoted(*actorx.Context, Q) error { return nil }
+func (*Embedded) Promoted(actorx.Context, Q) error { return nil }
 
 //actorx:actor
 type A struct{ Embedded }
 
-func (A) Read(*actorx.Context, Q) (int, error) { return 1, nil }
+func (A) Read(actorx.Context, Q) (int, error) { return 1, nil }
 
 func (*A) helper() {}
 
@@ -62,7 +62,7 @@ import "github.com/RussellLuo/actorx"
 
 type HandlerContext = actorx.Context
 
-func (*A) Reset(*HandlerContext, R) error { return nil }
+func (*A) Reset(HandlerContext, R) error { return nil }
 `,
 		// This file must not be included in the current build target.
 		"excluded.go": "//go:build actorx_excluded\n\npackage fixture\nfunc invalid(\n",
@@ -111,7 +111,7 @@ func (*A) Reset(*HandlerContext, R) error { return nil }
 	file.WriteString(`
 type More struct{}
 
-func (*A) More(*actorx.Context, More) error { return nil }
+func (*A) More(actorx.Context, More) error { return nil }
 `)
 	file.Close()
 	if err := Run(dir, "actorx.gen.go", true); err == nil || !strings.Contains(err.Error(), "stale") {
@@ -148,15 +148,23 @@ func (*A) Bad(int) {}`,
 type A struct{}
 
 func (*A) One(context.Context, Q) error { return nil }`,
-			want: "*actorx.Context",
+			want: "actorx.Context",
 		},
 		{
-			name: "context-value",
+			name: "context-pointer",
 			body: `//actorx:actor
 type A struct{}
 
-func (*A) One(actorx.Context, Q) error { return nil }`,
-			want: "*actorx.Context",
+func (*A) One(*actorx.Context, Q) error { return nil }`,
+			want: "actorx.Context",
+		},
+		{
+			name: "extended-context",
+			body: `type Extended interface { actorx.Context; Extra() }
+//actorx:actor
+type A struct{}
+func (*A) One(Extended, Q) error { return nil }`,
+			want: "actorx.Context",
 		},
 		{
 			name: "unrelated-context",
@@ -165,17 +173,17 @@ func (*A) One(actorx.Context, Q) error { return nil }`,
 //actorx:actor
 type A struct{}
 
-func (*A) One(*Context, Q) error { return nil }`,
-			want: "*actorx.Context",
+func (*A) One(Context, Q) error { return nil }`,
+			want: "actorx.Context",
 		},
 		{
 			name: "duplicate",
 			body: `//actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, Q) error { return nil }
+func (*A) One(actorx.Context, Q) error { return nil }
 
-func (*A) Two(*actorx.Context, Alias) error { return nil }`,
+func (*A) Two(actorx.Context, Alias) error { return nil }`,
 			want: "duplicate",
 		},
 		{
@@ -183,7 +191,7 @@ func (*A) Two(*actorx.Context, Alias) error { return nil }`,
 			body: `//actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, any) error { return nil }`,
+func (*A) One(actorx.Context, any) error { return nil }`,
 			want: "concrete",
 		},
 		{
@@ -192,7 +200,7 @@ func (*A) One(*actorx.Context, any) error { return nil }`,
 type A struct{}
 
 //actorx:handler
-func (*A) One(*actorx.Context, Q) error { return nil }`,
+func (*A) One(actorx.Context, Q) error { return nil }`,
 			want: "mix",
 		},
 		{
@@ -215,7 +223,7 @@ type A[T any] struct{}`,
 
 //actorx:handler
 //actorx:ignore
-func (*A) One(*actorx.Context, Q) error { return nil }`,
+func (*A) One(actorx.Context, Q) error { return nil }`,
 			want: "mix",
 		},
 		{
@@ -223,7 +231,7 @@ func (*A) One(*actorx.Context, Q) error { return nil }`,
 			body: `//actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, ...Q) error { return nil }`,
+func (*A) One(actorx.Context, ...Q) error { return nil }`,
 			want: "expected",
 		},
 	} {
@@ -238,7 +246,7 @@ import (
 )
 
 var _ context.Context
-var _ *actorx.Context
+var _ actorx.Context
 
 type Q struct{}
 
@@ -268,10 +276,10 @@ type S struct{}
 type A struct{}
 
 //actorx:handler
-func (*A) Deferred(*actorx.Context, Q, actorx.Reply[int]) error { return nil }
+func (*A) Deferred(actorx.Context, Q, actorx.Reply[int]) error { return nil }
 
 //actorx:handler
-func (*A) Stream(*actorx.Context, S, actorx.StreamReply[string]) error { return nil }
+func (*A) Stream(actorx.Context, S, actorx.StreamReply[string]) error { return nil }
 
 func (*A) PublicHelper() {}
 `})
@@ -304,7 +312,7 @@ type Q struct{}
 //actorx:actor
 type A struct{}
 
-func (*A) One(*actorx.Context, Q) error { return nil }
+func (*A) One(actorx.Context, Q) error { return nil }
 `,
 		"manual.go": "package fixture\n// User-owned source.\n",
 	})

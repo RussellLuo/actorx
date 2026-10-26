@@ -20,10 +20,10 @@ type TextChunk struct{ Text string }
 //actorx:actor
 type Assistant struct{}
 
-func (a *Assistant) Answer(ctx *actorx.Context, msg Ask, stream actorx.StreamReply[TextChunk]) error {
+func (a *Assistant) Answer(ctx actorx.Context, msg Ask, stream actorx.StreamReply[TextChunk]) error {
 	// Write may wait for a slow reader, so produce chunks outside the handler.
 	words := strings.Fields(msg.Topic + " use messages to coordinate work.")
-	_, err := ctx.StartTask(
+	_, err := actorx.StartTask(ctx,
 		func(ctx context.Context) (struct{}, error) {
 			for i, word := range words {
 				text := word

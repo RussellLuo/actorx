@@ -16,8 +16,8 @@ type streamRequest struct {
 func streamActor(t *testing.T, rt *Runtime, writes *atomic.Int32) *actor {
 	return spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleStream(func(ctx *Context, msg streamRequest, s StreamReply[int]) error {
-				_, err := ctx.StartTask(
+			HandleStream(func(ctx Context, msg streamRequest, s StreamReply[int]) error {
+				_, err := StartTask(ctx,
 					func(ctx context.Context) (struct{}, error) {
 						for i := 0; i < msg.N; i++ {
 							if err := s.Write(ctx, i, 8); err != nil {
@@ -42,7 +42,7 @@ func streamActor(t *testing.T, rt *Runtime, writes *atomic.Int32) *actor {
 				)
 				return err
 			}),
-			Handle(func(ctx *Context, _ get) (int, error) { return 1, nil }),
+			Handle(func(ctx Context, _ get) (int, error) { return 1, nil }),
 		}
 	})
 }
@@ -165,7 +165,7 @@ func TestStreamStopWithoutTerminal(t *testing.T) {
 	rt := runtimeFor(t)
 	entered := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleStream(func(ctx *Context, _ get, _ StreamReply[int]) error {
+		return []Binding{HandleStream(func(ctx Context, _ get, _ StreamReply[int]) error {
 			close(entered)
 			return nil
 		})}
@@ -234,8 +234,8 @@ func TestStreamCancelDuringFinalDrain(t *testing.T) {
 	rt := runtimeFor(t)
 	terminated := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleStream(func(ctx *Context, _ get, s StreamReply[int]) error {
-			_, err := ctx.StartTask(
+		return []Binding{HandleStream(func(ctx Context, _ get, s StreamReply[int]) error {
+			_, err := StartTask(ctx,
 				func(ctx context.Context) (int, error) { return 0, s.Write(ctx, 1, 1) },
 				func(_ int, err error) bool {
 					s.Complete(err)

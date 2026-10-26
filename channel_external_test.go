@@ -14,7 +14,7 @@ import (
 )
 
 // This fixture proves cross-package access and lifecycle boundaries only. Real
-// NATS binding evidence lives in channel/nats and is never inferred from it.
+// NATS binding evidence lives in actord and is never inferred from it.
 type seamChannel struct {
 	mu               sync.Mutex
 	opened           bool
@@ -162,19 +162,19 @@ func TestExternalChannelAdmissionAndCorrelation(t *testing.T) {
 	rt := seamRuntime(t, d)
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 		return []actorx.Binding{
-			actorx.Handle(func(*actorx.Context, seamQuery) (int, error) { return 7, nil }),
-			actorx.HandleMessage(func(*actorx.Context, seamNotice) error { return nil }),
-			actorx.HandleDeferred(func(_ *actorx.Context, _ seamDeferred, reply actorx.Reply[int]) error {
+			actorx.Handle(func(actorx.Context, seamQuery) (int, error) { return 7, nil }),
+			actorx.HandleMessage(func(actorx.Context, seamNotice) error { return nil }),
+			actorx.HandleDeferred(func(_ actorx.Context, _ seamDeferred, reply actorx.Reply[int]) error {
 				reply.Complete(9, nil)
 				return nil
 			}),
-			actorx.HandleStream(func(_ *actorx.Context, _ seamChunks, reply actorx.StreamReply[int]) error {
+			actorx.HandleStream(func(_ actorx.Context, _ seamChunks, reply actorx.StreamReply[int]) error {
 				reply.Complete(nil)
 				return nil
 			}),
-			actorx.HandleMessage(func(*actorx.Context, actorx.Started) error { return nil }),
-			actorx.HandleMessage(func(*actorx.Context, actorx.Stopping) error { return nil }),
-			actorx.HandleMessage(func(*actorx.Context, actorx.Stopped) error { return nil }),
+			actorx.HandleMessage(func(actorx.Context, actorx.Started) error { return nil }),
+			actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error { return nil }),
+			actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error { return nil }),
 		}
 	}))
 	if err != nil {
@@ -425,7 +425,7 @@ func TestExternalReceiverRejectsDifferentInstance(t *testing.T) {
 	rt := seamRuntime(t, d)
 	var invoked atomic.Int32
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.Handle(func(*actorx.Context, seamQuery) (int, error) {
+		return []actorx.Binding{actorx.Handle(func(actorx.Context, seamQuery) (int, error) {
 			invoked.Add(1)
 			return 7, nil
 		})}
@@ -472,8 +472,8 @@ func TestExternalAddrStopSettlementDoesNotHoldRuntimeLock(t *testing.T) {
 	stopping := make(chan struct{})
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 		return []actorx.Binding{
-			actorx.HandleDeferred(func(*actorx.Context, seamQuery, actorx.Reply[int]) error { return nil }),
-			actorx.HandleMessage(func(*actorx.Context, actorx.Stopping) error {
+			actorx.HandleDeferred(func(actorx.Context, seamQuery, actorx.Reply[int]) error { return nil }),
+			actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error {
 				close(stopping)
 				return nil
 			}),

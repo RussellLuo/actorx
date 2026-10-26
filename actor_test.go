@@ -49,11 +49,11 @@ func spawnFor(t *testing.T, rt *Runtime, f func() []Binding) *actor {
 		for i, b := range entries {
 			if b.phase == StateStarted {
 				invoke := b.invoke
-				entries[i].invoke = func(ctx *Context, msg any, r *request) error { a = ctx.actor; return invoke(ctx, msg, r) }
+				entries[i].invoke = func(ctx Context, msg any, r *request) error { a = ctx.actorContext().actor; return invoke(ctx, msg, r) }
 				return entries
 			}
 		}
-		return append(entries, HandleMessage(func(ctx *Context, _ Started) error { a = ctx.actor; return nil }))
+		return append(entries, HandleMessage(func(ctx Context, _ Started) error { a = ctx.actorContext().actor; return nil }))
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestSerialBindingsAndTypes(t *testing.T) {
 	active := 0
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			Handle(func(ctx *Context, msg add) (int, error) {
+			Handle(func(ctx Context, msg add) (int, error) {
 				active++
 				if active != 1 {
 					t.Error("concurrent handler")
@@ -104,8 +104,8 @@ func TestSerialBindingsAndTypes(t *testing.T) {
 				active--
 				return n, nil
 			}),
-			Handle(func(ctx *Context, _ get) (int, error) { return n, nil }),
-			HandleMessage(func(ctx *Context, _ wait) error {
+			Handle(func(ctx Context, _ get) (int, error) { return n, nil }),
+			HandleMessage(func(ctx Context, _ wait) error {
 				n = 0
 				return nil
 			}),
@@ -150,8 +150,8 @@ func TestNilRepliesAndNonComparableMessages(t *testing.T) {
 	rt := runtimeFor(t)
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			Handle(func(ctx *Context, _ []int) (*int, error) { return nil, nil }),
-			HandleMessage(func(ctx *Context, _ get) error { return nil }),
+			Handle(func(ctx Context, _ []int) (*int, error) { return nil, nil }),
+			HandleMessage(func(ctx Context, _ get) error { return nil }),
 		}
 	})
 
@@ -175,12 +175,12 @@ func TestFullStopAndUncooperativeHandler(t *testing.T) {
 	var ran atomic.Int32
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ wait) error {
+			HandleMessage(func(ctx Context, _ wait) error {
 				close(entered)
 				<-release
 				return nil
 			}),
-			HandleMessage(func(ctx *Context, _ get) error {
+			HandleMessage(func(ctx Context, _ get) error {
 				ran.Add(1)
 				return nil
 			}),
@@ -265,9 +265,9 @@ func TestBindingsRejectInvalidActorsAndEntries(t *testing.T) {
 	if !addr.IsZero() || !errors.Is(err, ErrSetup) || !errors.As(err, &pe) || count != 1 {
 		t.Fatal(addr, err, count)
 	}
-	b := HandleMessage(func(*Context, get) error { return nil })
+	b := HandleMessage(func(Context, get) error { return nil })
 	for _, entries := range [][]Binding{
-		{HandleMessage[any](func(*Context, any) error { return nil })},
+		{HandleMessage[any](func(Context, any) error { return nil })},
 		{HandleMessage[get](nil)}, {{}}, {b, b},
 	} {
 		if addr, err := rt.Spawn(bindingsFunc(func() []Binding { return entries })); !addr.IsZero() || !errors.Is(err, ErrSetup) {
@@ -286,8 +286,8 @@ func TestPanicTerminatesButBusinessErrorDoesNot(t *testing.T) {
 	business := errors.New("business")
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ get) error { return business }),
-			HandleMessage(func(ctx *Context, _ wait) error { panic("handler") }),
+			HandleMessage(func(ctx Context, _ get) error { return business }),
+			HandleMessage(func(ctx Context, _ wait) error { panic("handler") }),
 		}
 	})
 
@@ -404,7 +404,7 @@ func TestChannelOwnershipAndPendingBound(t *testing.T) {
 
 	entered := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx *Context, _ get, _ Reply[int]) error {
+		return []Binding{HandleDeferred(func(ctx Context, _ get, _ Reply[int]) error {
 			close(entered)
 			return nil
 		})}
@@ -467,8 +467,8 @@ func TestDeferredCompletionAndCancellation(t *testing.T) {
 	var duplicate atomic.Bool
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleDeferred(func(ctx *Context, _ wait, r Reply[int]) error {
-				_, err := ctx.StartTask(
+			HandleDeferred(func(ctx Context, _ wait, r Reply[int]) error {
+				_, err := StartTask(ctx,
 					func(context.Context) (int, error) {
 						close(entered)
 						<-release
@@ -486,7 +486,7 @@ func TestDeferredCompletionAndCancellation(t *testing.T) {
 				)
 				return err
 			}),
-			Handle(func(ctx *Context, _ get) (int, error) { return 7, nil }),
+			Handle(func(ctx Context, _ get) (int, error) { return 7, nil }),
 		}
 	})
 
@@ -528,8 +528,8 @@ func TestTaskReservationAndRollbackAfterQueuedCompletion(t *testing.T) {
 	var complete atomic.Bool
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ wait) error {
-				_, err := ctx.WithContext(context.Background()).StartTask(
+			HandleMessage(func(ctx Context, _ wait) error {
+				_, err := StartTask(ctx.WithContext(context.Background()),
 					func(context.Context) (int, error) {
 						close(started)
 						<-finishWork
@@ -543,12 +543,12 @@ func TestTaskReservationAndRollbackAfterQueuedCompletion(t *testing.T) {
 				)
 				return err
 			}),
-			HandleMessage(func(ctx *Context, _ get) error {
+			HandleMessage(func(ctx Context, _ get) error {
 				close(blocked)
 				<-unblock
 				return nil
 			}),
-			HandleMessage(func(ctx *Context, _ add) error { return nil }),
+			HandleMessage(func(ctx Context, _ add) error { return nil }),
 		}
 	})
 
@@ -598,8 +598,8 @@ func TestStopUnblocksWorkerBeforeWaiting(t *testing.T) {
 	entered := make(chan struct{})
 	rolled := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(*Context, Stopping) error { close(unblock); return nil }), HandleMessage(func(ctx *Context, _ wait) error {
-			_, err := ctx.WithContext(context.Background()).StartTask(
+		return []Binding{HandleMessage(func(Context, Stopping) error { close(unblock); return nil }), HandleMessage(func(ctx Context, _ wait) error {
+			_, err := StartTask(ctx.WithContext(context.Background()),
 				func(context.Context) (int, error) {
 					close(entered)
 					<-unblock
@@ -627,8 +627,8 @@ func TestWorkerPanicAndDiscard(t *testing.T) {
 	rt := runtimeFor(t)
 	discarded := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx *Context, _ get, r Reply[int]) error {
-			_, err := ctx.StartTask(
+		return []Binding{HandleDeferred(func(ctx Context, _ get, r Reply[int]) error {
+			_, err := StartTask(ctx,
 				func(context.Context) (int, error) { panic("worker") },
 				func(v int, err error) bool {
 					r.Complete(v, err)
@@ -656,12 +656,12 @@ func TestSendContextEndsAtAdmission(t *testing.T) {
 	ran := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ wait) error {
+			HandleMessage(func(ctx Context, _ wait) error {
 				close(blocked)
 				<-release
 				return nil
 			}),
-			HandleMessage(func(ctx *Context, _ get) error {
+			HandleMessage(func(ctx Context, _ get) error {
 				if ctx.Err() != nil {
 					t.Error(ctx.Err())
 				}
@@ -694,8 +694,8 @@ func TestTaskCapacityRejectsBeforeWorkAndLateResourceRollback(t *testing.T) {
 	var extraRan atomic.Bool
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ wait) error {
-				_, err := ctx.WithContext(context.Background()).StartTask(
+			HandleMessage(func(ctx Context, _ wait) error {
+				_, err := StartTask(ctx.WithContext(context.Background()),
 					func(context.Context) (int, error) {
 						close(started)
 						<-release
@@ -709,8 +709,8 @@ func TestTaskCapacityRejectsBeforeWorkAndLateResourceRollback(t *testing.T) {
 				)
 				return err
 			}),
-			HandleMessage(func(ctx *Context, _ get) error {
-				_, err := ctx.WithContext(context.Background()).StartTask(
+			HandleMessage(func(ctx Context, _ get) error {
+				_, err := StartTask(ctx.WithContext(context.Background()),
 					func(context.Context) (int, error) {
 						extraRan.Store(true)
 						return 0, nil
@@ -756,7 +756,7 @@ func TestReplyCancellationCompletionStopRace(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		replies := make(chan Reply[int], 1)
 		a := spawnFor(t, rt, func() []Binding {
-			return []Binding{HandleDeferred(func(ctx *Context, _ get, r Reply[int]) error {
+			return []Binding{HandleDeferred(func(ctx Context, _ get, r Reply[int]) error {
 				replies <- r
 				return nil
 			})}
@@ -796,8 +796,8 @@ func TestDeferredSendHasNoCallerWaitSlot(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx *Context, _ get, r Reply[int]) error {
-			_, err := ctx.StartTask(
+		return []Binding{HandleDeferred(func(ctx Context, _ get, r Reply[int]) error {
+			_, err := StartTask(ctx,
 				func(context.Context) (int, error) {
 					close(started)
 					<-release
@@ -837,7 +837,7 @@ func TestCallContextDeadlineAndCleanupPanic(t *testing.T) {
 	observed := make(chan time.Time, 1)
 	cleaned := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(*Context, Stopping) error { defer close(cleaned); panic("stop cleanup") }), HandleMessage(func(ctx *Context, _ get) error {
+		return []Binding{HandleMessage(func(Context, Stopping) error { defer close(cleaned); panic("stop cleanup") }), HandleMessage(func(ctx Context, _ get) error {
 			deadline, ok := ctx.Deadline()
 			if !ok {
 				t.Error("missing deadline")
@@ -876,13 +876,13 @@ func TestBindingsCalledOnceBeforeStartup(t *testing.T) {
 	addr, err := rt.Spawn(bindingsFunc(func() []Binding {
 		calls++
 		return []Binding{
-			HandleMessage(func(ctx *Context, _ Started) error {
-				if err := ctx.actor.addr().Send(context.Background(), get{}); !errors.Is(err, ErrStopped) {
+			HandleMessage(func(ctx Context, _ Started) error {
+				if err := ctx.actorContext().actor.addr().Send(context.Background(), get{}); !errors.Is(err, ErrStopped) {
 					t.Error("startup admitted ordinary message", err)
 				}
 				return nil
 			}),
-			Handle(func(*Context, get) (int, error) { return calls, nil }),
+			Handle(func(Context, get) (int, error) { return calls, nil }),
 		}
 	}))
 	if err != nil {
@@ -898,8 +898,8 @@ func TestDiscardPanicRemainsObservableAfterNormalStop(t *testing.T) {
 	rt := runtimeFor(t)
 	reported := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(ctx *Context, _ get) error {
-			_, err := ctx.WithContext(context.Background()).StartTask(
+		return []Binding{HandleMessage(func(ctx Context, _ get) error {
+			_, err := StartTask(ctx.WithContext(context.Background()),
 				func(context.Context) (int, error) { return 0, nil },
 				func(int, error) bool { return false },
 				func(int) {

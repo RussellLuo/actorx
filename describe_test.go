@@ -10,8 +10,8 @@ import (
 )
 
 func TestDescribeAndSpawnShareValidation(t *testing.T) {
-	message := HandleMessage(func(*Context, get) error { panic("invalid set executed") })
-	started := HandleMessage(func(*Context, Started) error { panic("invalid set started") })
+	message := HandleMessage(func(Context, get) error { panic("invalid set executed") })
+	started := HandleMessage(func(Context, Started) error { panic("invalid set started") })
 	cases := map[string][]Binding{
 		"zero":                    {{}},
 		"zero after valid":        {message, {}},
@@ -19,20 +19,20 @@ func TestDescribeAndSpawnShareValidation(t *testing.T) {
 		"nil request handler":     {Handle[get, int](nil)},
 		"nil deferred handler":    {HandleDeferred[get, int](nil)},
 		"nil stream handler":      {HandleStream[get, int](nil)},
-		"interface message":       {HandleMessage(func(*Context, any) error { return nil })},
+		"interface message":       {HandleMessage(func(Context, any) error { return nil })},
 		"duplicate message":       {message, message},
-		"duplicate across modes":  {message, HandleStream(func(*Context, get, StreamReply[int]) error { return nil })},
-		"duplicate result types":  {Handle(func(*Context, get) (int, error) { return 0, nil }), Handle(func(*Context, get) (string, error) { return "", nil })},
+		"duplicate across modes":  {message, HandleStream(func(Context, get, StreamReply[int]) error { return nil })},
+		"duplicate result types":  {Handle(func(Context, get) (int, error) { return 0, nil }), Handle(func(Context, get) (string, error) { return "", nil })},
 		"duplicate lifecycle":     {started, started},
 		"nil started handler":     {HandleMessage[Started](nil)},
 		"nil stopping handler":    {HandleMessage[Stopping](nil)},
 		"nil stopped handler":     {HandleMessage[Stopped](nil)},
-		"pointer lifecycle":       {HandleMessage(func(*Context, *Started) error { return nil })},
-		"lifecycle request":       {Handle(func(*Context, Stopping) (int, error) { return 0, nil })},
-		"lifecycle deferred":      {HandleDeferred(func(*Context, Stopped, Reply[int]) error { return nil })},
-		"lifecycle stream":        {HandleStream(func(*Context, Started, StreamReply[int]) error { return nil })},
-		"lifecycle result":        {Handle(func(*Context, get) (Stopped, error) { return Stopped{}, nil })},
-		"lifecycle chunk":         {HandleStream(func(*Context, get, StreamReply[*Stopping]) error { return nil })},
+		"pointer lifecycle":       {HandleMessage(func(Context, *Started) error { return nil })},
+		"lifecycle request":       {Handle(func(Context, Stopping) (int, error) { return 0, nil })},
+		"lifecycle deferred":      {HandleDeferred(func(Context, Stopped, Reply[int]) error { return nil })},
+		"lifecycle stream":        {HandleStream(func(Context, Started, StreamReply[int]) error { return nil })},
+		"lifecycle result":        {Handle(func(Context, get) (Stopped, error) { return Stopped{}, nil })},
+		"lifecycle chunk":         {HandleStream(func(Context, get, StreamReply[*Stopping]) error { return nil })},
 		"invalid after lifecycle": {started, {}},
 	}
 	for name, entries := range cases {
@@ -54,9 +54,9 @@ func TestDescribeEmptyAndLifecycleOnly(t *testing.T) {
 		nil,
 		{},
 		{
-			HandleMessage(func(*Context, Started) error { calls++; return nil }),
-			HandleMessage(func(*Context, Stopping) error { calls++; return nil }),
-			HandleMessage(func(*Context, Stopped) error { calls++; return nil }),
+			HandleMessage(func(Context, Started) error { calls++; return nil }),
+			HandleMessage(func(Context, Stopping) error { calls++; return nil }),
+			HandleMessage(func(Context, Stopped) error { calls++; return nil }),
 		},
 	} {
 		out, err := Describe(entries)
@@ -89,9 +89,9 @@ func (a *describeReceiver) Bindings() []Binding {
 	return []Binding{HandleMessage(a.started), Handle(a.read), Handle(a.add)}
 }
 
-func (a *describeReceiver) started(*Context, Started) error { a.n++; return nil }
-func (a *describeReceiver) read(*Context, get) (int, error) { return a.n, nil }
-func (a *describeReceiver) add(_ *Context, msg add) (int, error) {
+func (a *describeReceiver) started(Context, Started) error { a.n++; return nil }
+func (a *describeReceiver) read(Context, get) (int, error) { return a.n, nil }
+func (a *describeReceiver) add(_ Context, msg add) (int, error) {
 	a.n += msg.N
 	return a.n, nil
 }

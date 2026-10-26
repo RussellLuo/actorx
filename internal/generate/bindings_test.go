@@ -18,16 +18,17 @@ type Deferred struct{}
 type Chunks struct{}
 //actorx:actor
 type A struct{ N int }
+var _ ax.Actor = (*A)(nil)
 var constructed int
 func newA(n int) *A { constructed++; return &A{N: n} }
-func (a *A) Add(_ *ax.Context, q Add) (int, error) { a.N += q.N; return a.N, nil }
-func (a A) Read(*ax.Context, Read) (int, error) { return a.N, nil }
-func (a A) Notice(*ax.Context, Notice) error { return nil }
-func (a A) Deferred(_ *ax.Context, _ Deferred, reply ax.Reply[time.Duration]) error { reply.Complete(time.Second, nil); return nil }
-func (a A) Chunks(_ *ax.Context, _ Chunks, reply ax.StreamReply[time.Duration]) error { reply.Complete(nil); return nil }
-func (a A) Started(*ax.Context, ax.Started) error { _ = a.N; return nil }
-func (a *A) Stopping(*ax.Context, ax.Stopping) error { _ = a.N; return nil }
-func (a *A) Stopped(*ax.Context, ax.Stopped) error { _ = a.N; return nil }
+func (a *A) Add(_ ax.Context, q Add) (int, error) { a.N += q.N; return a.N, nil }
+func (a A) Read(ax.Context, Read) (int, error) { return a.N, nil }
+func (a A) Notice(ax.Context, Notice) error { return nil }
+func (a A) Deferred(_ ax.Context, _ Deferred, reply ax.Reply[time.Duration]) error { reply.Complete(time.Second, nil); return nil }
+func (a A) Chunks(_ ax.Context, _ Chunks, reply ax.StreamReply[time.Duration]) error { reply.Complete(nil); return nil }
+func (a A) Started(ax.Context, ax.Started) error { _ = a.N; return nil }
+func (a *A) Stopping(ax.Context, ax.Stopping) error { _ = a.N; return nil }
+func (a *A) Stopped(ax.Context, ax.Stopped) error { _ = a.N; return nil }
 `,
 		"a_test.go": `package fixture
 import (
@@ -88,9 +89,9 @@ type actorx struct{}
 type actorxType0 struct{}
 //actorx:actor
 type A struct{}
-func (A) Read(*ax.Context, a) (time.Duration, error) { return 0, nil }
-func (A) Reset(*ax.Context, actorx) error { return nil }
-func (A) More(*ax.Context, actorxType0) error { return nil }
+func (A) Read(ax.Context, a) (time.Duration, error) { return 0, nil }
+func (A) Reset(ax.Context, actorx) error { return nil }
+func (A) More(ax.Context, actorxType0) error { return nil }
 `})
 	if err := Run(dir, "actorx.gen.go", false); err != nil {
 		t.Fatal(err)
@@ -108,7 +109,7 @@ import ax "github.com/RussellLuo/actorx"
 type Q struct{}
 //actorx:actor
 type A struct{}
-func (*A) Read(*ax.Context, Q) error { return nil }
+func (*A) Read(ax.Context, Q) error { return nil }
 ` + marker + `func (*A) Bindings() []ax.Binding { return nil }
 `})
 		if err := Run(dir, "actorx.gen.go", false); err == nil {

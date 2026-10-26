@@ -18,12 +18,27 @@ type config struct {
 	workers     int
 	streamItems int
 	chunkBytes  int
+	instances   int
 
-	channel Channel
+	channel           Channel
+	contextFactory    ContextFactory
+	contextFactorySet bool
 }
 
 // Option configures a Runtime before it takes ownership of its channel.
 type Option func(*config)
+
+// WithContextFactory installs the Runtime's context extension policy. Spawn
+// calls factory once per instance after validating Bindings, before binding the
+// channel or entering Started. Local Context.Spawn children use the same factory
+// with their own Actor. The last option wins; an explicitly nil final factory
+// returns ErrSetup from NewRuntime. Omitting the option keeps local contexts.
+func WithContextFactory(factory ContextFactory) Option {
+	return func(c *config) {
+		c.contextFactory = factory
+		c.contextFactorySet = true
+	}
+}
 
 // WithMailboxCapacity bounds queued messages and reserved task completions per actor.
 func WithMailboxCapacity(n int) Option { return func(c *config) { c.mailbox = n } }
@@ -36,6 +51,11 @@ func WithCallLimit(n int) Option { return func(c *config) { c.calls = n } }
 
 // WithTaskLimit bounds owned tasks per actor until result delivery or discard.
 func WithTaskLimit(n int) Option { return func(c *config) { c.workers = n } }
+
+// WithInstanceLimit bounds all instances, including constructing, stopping and
+// local Context.Spawn objects, until complete exit. Zero (the default) disables
+// this bound. A full Runtime rejects Spawn with ErrFull before reading Bindings.
+func WithInstanceLimit(n int) Option { return func(c *config) { c.instances = n } }
 
 // WithStreamLimits bounds queued chunks and each producer-declared payload size.
 // A stream retains at most items*chunkBytes bytes plus one in-flight chunk.
@@ -85,11 +105,14 @@ func NewRuntime(ctx context.Context, options ...Option) (*Runtime, error) {
 		o(&c)
 	}
 
-	if c.mailbox < 1 || c.pending < 1 || c.calls < 1 || c.workers < 1 || c.streamItems < 1 || c.chunkBytes < 1 {
-		return nil, fmt.Errorf("%w: capacities must be positive", ErrSetup)
+	if c.mailbox < 1 || c.pending < 1 || c.calls < 1 || c.workers < 1 || c.streamItems < 1 || c.chunkBytes < 1 || c.instances < 0 {
+		return nil, fmt.Errorf("%w: capacities must be positive and instance limit nonnegative", ErrSetup)
 	}
 	if channelutil.IsNil(c.channel) {
 		return nil, ErrSetup
+	}
+	if c.contextFactorySet && c.contextFactory == nil {
+		return nil, fmt.Errorf("%w: nil context factory", ErrSetup)
 	}
 	if err := c.channel.Open(ctx); err != nil {
 		return nil, err
@@ -120,6 +143,10 @@ func (rt *Runtime) Spawn(value Actor) (Addr, error) {
 		rt.mu.Unlock()
 		return Addr{}, ErrSetup
 	}
+	if rt.cfg.instances > 0 && len(rt.actors) >= rt.cfg.instances {
+		rt.mu.Unlock()
+		return Addr{}, ErrFull
+	}
 
 	rt.spawning.Add(1)
 
@@ -137,8 +164,19 @@ func (rt *Runtime) Spawn(value Actor) (Addr, error) {
 			}
 		}()
 
-		bindings := value.Bindings()
-		return a.install(bindings)
+		if err := a.install(value.Bindings()); err != nil {
+			return err
+		}
+		if rt.cfg.contextFactory != nil {
+			a.contextWrapper, err = rt.cfg.contextFactory(value)
+			if err != nil {
+				return errors.Join(ErrSetup, err)
+			}
+			if a.contextWrapper == nil {
+				return fmt.Errorf("%w: context factory returned nil wrapper", ErrSetup)
+			}
+		}
+		return nil
 	}()
 
 	// Network readiness must not hold the Runtime lock. Close cancels this

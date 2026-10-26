@@ -34,7 +34,7 @@ Actorx 将有状态组件组织为 actor：普通 Go struct 保存状态，具�
 
 ## 异步工作
 
-耗时 I/O 或计算放进 `ctx.StartTask(work, complete, discard)`，让 handler 尽快返回：
+耗时 I/O 或计算放进 `actorx.StartTask(ctx, work, complete, discard)`，让 handler 尽快返回：
 
 ```text
 handler：读取状态、准备输入快照
@@ -68,3 +68,9 @@ Runtime 默认使用根包的 LocalChannel，通过 Channel 接口将请求送�
 静态读取消息清单等工具能力集中在[运行语义参考](runtime.zh.md#静态读取消息描述)，无需在第一次编写 Actor 时掌握。
 
 下一步按[示例学习路径](../examples/README.zh.md)学习异步查询、流式输出和实例协作。
+
+## Context 能力
+
+`actorx.Context` 是 Runtime 提供的接口，嵌入标准 `context.Context`，提供 WithContext、Stop、Spawn 和 State；异步任务通过 `actorx.StartTask(ctx, ...)` 启动。Spawn 创建独立本地实例，State 表示本地生命周期。
+
+Runtime 通过 `WithContextFactory` 配置可选能力。Spawn 用本次 Actor 调用工厂一次，再由返回的 `ContextWrapper` 包装每次执行上下文。扩展须嵌入框架提供的 Context，保留其私有执行归属。WithContext 替换 parent 后复用该 wrapper，即使使用 Background 也保留扩展；本地子对象用自己的 Actor 经过同一工厂。详见[扩展及迁移规则](runtime.zh.md#context-扩展与迁移)。

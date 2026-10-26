@@ -29,13 +29,13 @@ type Directory struct {
 	loading bool
 }
 
-func (d *Directory) Lookup(ctx *actorx.Context, msg LookupProfile, reply actorx.Reply[Profile]) error {
+func (d *Directory) Lookup(ctx actorx.Context, msg LookupProfile, reply actorx.Reply[Profile]) error {
 	if d.loading {
 		return errors.New("profile lookup already in progress")
 	}
 
 	d.loading = true
-	_, err := ctx.StartTask(
+	_, err := actorx.StartTask(ctx,
 		func(ctx context.Context) (Profile, error) {
 			return mockLookup(ctx, msg.UserID)
 		},
@@ -55,7 +55,7 @@ func (d *Directory) Lookup(ctx *actorx.Context, msg LookupProfile, reply actorx.
 	return err
 }
 
-func (d *Directory) GetStatus(_ *actorx.Context, _ GetStatus) (Status, error) {
+func (d *Directory) GetStatus(_ actorx.Context, _ GetStatus) (Status, error) {
 	return Status{Loading: d.loading}, nil
 }
 
