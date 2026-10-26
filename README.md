@@ -13,14 +13,18 @@ A counter keeps its count in an object. Send it a message to add a value and rec
 ```go
 import "github.com/go-aie/actorx"
 
-type Add struct{ N int }
+type Add struct {
+    N int
+}
 
 //actorx:actor
-type Counter struct{ n int }
+type Counter struct {
+    count int
+}
 
 func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
-    c.n += msg.N
-    return c.n, nil
+    c.count += msg.N
+    return c.count, nil
 }
 ```
 

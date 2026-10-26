@@ -161,7 +161,9 @@ Describe 与 Spawn 共用校验，先校验所有绑定，再排除生命周期�
 //go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 
 //actorx:actor
-type Counter struct{ n int }
+type Counter struct {
+    count int
+}
 ```
 
 在目标 package 运行 `go generate .`，或直接 `go run github.com/go-aie/actorx/cmd/actorx-gen`。首次接入见[快速入门](getting-started.zh.md)。默认按包生成一个 `actorx.gen.go`，支持 `-output 文件名` 与 `-check`。

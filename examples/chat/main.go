@@ -11,9 +11,13 @@ import (
 	"github.com/go-aie/actorx"
 )
 
-type Ask struct{ Topic string }
+type Ask struct {
+	Topic string
+}
 
-type TextChunk struct{ Text string }
+type TextChunk struct {
+	Text string
+}
 
 // Assistant streams a simulated answer without a model or network.
 //

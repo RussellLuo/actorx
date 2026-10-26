@@ -13,14 +13,18 @@ Actorx 是一个 Go Actor 框架，帮助你构建通过消息协作的有状态
 ```go
 import "github.com/go-aie/actorx"
 
-type Add struct{ N int }
+type Add struct {
+    N int
+}
 
 //actorx:actor
-type Counter struct{ n int }
+type Counter struct {
+    count int
+}
 
 func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
-    c.n += msg.N
-    return c.n, nil
+    c.count += msg.N
+    return c.count, nil
 }
 ```
 

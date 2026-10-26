@@ -9,7 +9,9 @@ import (
 	"github.com/go-aie/actorx"
 )
 
-type Message struct{ Text string }
+type Message struct {
+	Text string
+}
 
 type Logout struct{}
 
@@ -45,7 +47,9 @@ func (s *Session) Stopping(ctx actorx.Context, msg actorx.Stopping) error {
 
 func (s *Session) Stopped(ctx actorx.Context, msg actorx.Stopped) error {
 	// Owned work and resource cleanup have finished; Wait completes after return.
-	fmt.Printf("stopped: state=%s, messages=%d, reason=%v\n", stateName(ctx.State()), s.messages, msg.Reason)
+	fmt.Printf("stopped: state=%s, messages=%d, reason=%v\n",
+		stateName(ctx.State()), s.messages, msg.Reason,
+	)
 	return nil
 }
 

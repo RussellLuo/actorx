@@ -68,6 +68,7 @@ func (s *Session) Stopped(ctx actorx.Context, msg actorx.Stopped) error {
 if err := addr.Stop(nil); err != nil {
     return err
 }
+
 exit, err := addr.Wait(ctx)
 if err != nil {
     return err // 本次等待失败，尚未确认完整退出。

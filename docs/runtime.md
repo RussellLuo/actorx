@@ -161,7 +161,9 @@ Add a directive to an application file and mark the type:
 //go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 
 //actorx:actor
-type Counter struct{ n int }
+type Counter struct {
+    count int
+}
 ```
 
 Run `go generate .` in the target package, or invoke `go run github.com/go-aie/actorx/cmd/actorx-gen` directly. See [Getting started](getting-started.md) for first setup. The default output is one package-level `actorx.gen.go`; `-output filename` and `-check` are supported.

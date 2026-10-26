@@ -68,6 +68,7 @@ Authors can call `ctx.Stop(cause)` from Started, a normal handler, or a serial c
 if err := addr.Stop(nil); err != nil {
     return err
 }
+
 exit, err := addr.Wait(ctx)
 if err != nil {
     return err // This wait failed; complete exit is not yet confirmed.

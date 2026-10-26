@@ -29,14 +29,18 @@ import (
     "github.com/go-aie/actorx"
 )
 
-type Add struct{ N int }
+type Add struct {
+    N int
+}
 
 //actorx:actor
-type Counter struct{ n int }
+type Counter struct {
+    count int
+}
 
 func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
-    c.n += msg.N
-    return c.n, nil
+    c.count += msg.N
+    return c.count, nil
 }
 ```
 
@@ -61,6 +65,7 @@ func run() error {
     if err != nil {
         return err
     }
+
     n, err := addr.Call[int](ctx, Add{N: 5})
     if err != nil {
         return err

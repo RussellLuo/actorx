@@ -12,9 +12,13 @@ import (
 	"github.com/go-aie/actorx"
 )
 
-type Message struct{ Text string }
+type Message struct {
+	Text string
+}
 
-type Format struct{ Text string }
+type Format struct {
+	Text string
+}
 
 //actorx:actor
 type Worker struct{}
@@ -26,7 +30,9 @@ func (w *Worker) Format(_ actorx.Context, msg Format) (string, error) {
 // Session owns a dedicated worker address, rather than its mutable state.
 //
 //actorx:actor
-type Session struct{ worker actorx.Addr }
+type Session struct {
+	worker actorx.Addr
+}
 
 func (s *Session) Started(ctx actorx.Context, _ actorx.Started) error {
 	worker, err := ctx.Spawn(&Worker{})

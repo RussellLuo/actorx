@@ -12,12 +12,12 @@ type Add struct {
 
 //actorx:actor
 type Counter struct {
-	value int
+	count int
 }
 
 func (c *Counter) Add(_ actorx.Context, m Add) (int, error) {
-	c.value += m.N
-	return c.value, nil
+	c.count += m.N
+	return c.count, nil
 }
 
 var CounterSpec = dist.ActorSpec[*Counter]{

@@ -28,7 +28,11 @@ Stop uses a two-second control deadline. Wait defaults to five seconds without a
 // Exclusive temporary object: original address, independent deadline, before caller Close.
 cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 defer cancel()
-if err := addr.Stop(nil); err != nil { return err }
+
+if err := addr.Stop(nil); err != nil {
+    return err
+}
+
 exit, err := addr.Wait(cleanup)
 // Check err; when err == nil, exit.Reason is the final cause.
 ```

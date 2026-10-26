@@ -16,19 +16,25 @@ import (
     "github.com/go-aie/actorx/dist"
 )
 
-type Add struct{ N int `json:"n"` }
+type Add struct {
+    N int `json:"n"`
+}
 
 //actorx:actor
-type Counter struct{ value int }
+type Counter struct {
+    count int
+}
 
 func (c *Counter) Add(_ actorx.Context, msg Add) (int, error) {
-    c.value += msg.N
-    return c.value, nil
+    c.count += msg.N
+    return c.count, nil
 }
 
 var CounterSpec = dist.ActorSpec[*Counter]{
     Type: "counter",
-    New:  func(dist.ActorKey) *Counter { return &Counter{} },
+    New: func(dist.ActorKey) *Counter {
+        return &Counter{}
+    },
 }
 ```
 

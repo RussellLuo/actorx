@@ -28,7 +28,11 @@ Stop 使用两秒控制期限；Wait 无 deadline 时默认五秒，显式期限
 // 独占临时对象：用原地址及独立期限收尾，随后才关闭调用方。
 cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 defer cancel()
-if err := addr.Stop(nil); err != nil { return err }
+
+if err := addr.Stop(nil); err != nil {
+    return err
+}
+
 exit, err := addr.Wait(cleanup)
 // 检查 err；err == nil 时通过 exit.Reason 读取最终原因。
 ```

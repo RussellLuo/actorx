@@ -11,7 +11,9 @@ import (
 	"github.com/go-aie/actorx"
 )
 
-type LookupProfile struct{ UserID string }
+type LookupProfile struct {
+	UserID string
+}
 
 type Profile struct {
 	Name  string
@@ -20,7 +22,9 @@ type Profile struct {
 
 type GetStatus struct{}
 
-type Status struct{ Loading bool }
+type Status struct {
+	Loading bool
+}
 
 // Directory keeps state on the actor and runs the lookup outside its handler.
 //

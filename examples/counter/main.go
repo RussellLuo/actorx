@@ -11,24 +11,30 @@ import (
 	"github.com/go-aie/actorx"
 )
 
-type Add struct{ N int }
+type Add struct {
+	N int
+}
 
 type Get struct{}
 
 type Reset struct{}
 
 //actorx:actor
-type Counter struct{ n int }
-
-func (c *Counter) Add(ctx actorx.Context, msg Add) (int, error) {
-	c.n += msg.N
-	return c.n, nil
+type Counter struct {
+	count int
 }
 
-func (c *Counter) Get(ctx actorx.Context, _ Get) (int, error) { return c.n, nil }
+func (c *Counter) Add(ctx actorx.Context, msg Add) (int, error) {
+	c.count += msg.N
+	return c.count, nil
+}
+
+func (c *Counter) Get(ctx actorx.Context, _ Get) (int, error) {
+	return c.count, nil
+}
 
 func (c *Counter) Reset(ctx actorx.Context, _ Reset) error {
-	c.n = 0
+	c.count = 0
 	return nil
 }
 
