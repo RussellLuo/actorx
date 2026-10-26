@@ -3,7 +3,7 @@ package dist
 import (
 	"reflect"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // Context adds optional distributed addressing to the common execution context.

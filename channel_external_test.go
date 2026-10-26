@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // This fixture proves cross-package access and lifecycle boundaries only. Real

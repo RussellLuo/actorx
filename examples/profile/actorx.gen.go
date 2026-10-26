@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 func (a *Directory) Bindings() []actorx.Binding {
 	return []actorx.Binding{

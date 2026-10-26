@@ -1,6 +1,6 @@
 package actorx_test
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type bindingsFunc func() []actorx.Binding
 

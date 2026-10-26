@@ -12,8 +12,8 @@ A distributed counter keeps its count in an Actor. An Add message increments it 
 
 ```go
 import (
-    "github.com/RussellLuo/actorx"
-    "github.com/RussellLuo/actorx/dist"
+    "github.com/go-aie/actorx"
+    "github.com/go-aie/actorx/dist"
 )
 
 type Add struct{ N int `json:"n"` }
@@ -57,7 +57,7 @@ Inside an Actor, use `dist.MustFrom(ctx).Addr(type, id)` for addressing and Self
 
 ## Run the example
 
-Requires Go 1.27. Run from this source checkout; dist downloads the core version pinned in go.mod.
+Requires Go 1.27. Run from this source checkout; dist uses the core source in the parent directory through go.mod's local replacement. After publishing the migrated core, pin its version and remove the replacement for released-module consumption.
 
 Download the archive for your OS and architecture from the [official NATS v2.10.18 release](https://github.com/nats-io/nats-server/releases/tag/v2.10.18). For macOS Apple Silicon, download, extract and add the executable to this terminal's PATH as follows. Other platforms can select their matching package on the same release page:
 

@@ -11,7 +11,7 @@ Components process messages in order, with support for asynchronous tasks, strea
 A counter keeps its count in an object. Send it a message to add a value and receive the new total.
 
 ```go
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Add struct{ N int }
 

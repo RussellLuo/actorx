@@ -4,7 +4,7 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // invokeLocal is the internal local integration probe. Production business

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type codecDTO struct {

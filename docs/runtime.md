@@ -158,13 +158,13 @@ Generated Bindings supports construction on a concrete nil pointer. Handwritten 
 Add a directive to an application file and mark the type:
 
 ```go
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 
 //actorx:actor
 type Counter struct{ n int }
 ```
 
-Run `go generate .` in the target package, or invoke `go run github.com/RussellLuo/actorx/cmd/actorx-gen` directly. See [Getting started](getting-started.md) for first setup. The default output is one package-level `actorx.gen.go`; `-output filename` and `-check` are supported.
+Run `go generate .` in the target package, or invoke `go run github.com/go-aie/actorx/cmd/actorx-gen` directly. See [Getting started](getting-started.md) for first setup. The default output is one package-level `actorx.gen.go`; `-output filename` and `-check` are supported.
 
 - Type markers select public, directly declared methods across files, supporting T / *T receivers. Private, `//actorx:ignore`, and promoted methods are excluded.
 - To select individual methods, use `//actorx:handler`; do not mix both modes on one type. Unsupported signatures, duplicate messages, or existing handwritten Bindings fail generation.

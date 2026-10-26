@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func TestRuntimeChannelStartup(t *testing.T) {

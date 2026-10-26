@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	dist "github.com/RussellLuo/actorx/dist/internal/fault"
+	dist "github.com/go-aie/actorx/dist/internal/fault"
 )
 
 func TestDownstreamClassifications(t *testing.T) {

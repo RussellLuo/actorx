@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/RussellLuo/actorx"
-	"github.com/RussellLuo/actorx/dist/internal/errwire"
-	"github.com/RussellLuo/actorx/dist/internal/identity"
+	"github.com/go-aie/actorx"
+	"github.com/go-aie/actorx/dist/internal/errwire"
+	"github.com/go-aie/actorx/dist/internal/identity"
 )
 
 type terminal struct {

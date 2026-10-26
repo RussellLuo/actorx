@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/RussellLuo/actorx/dist/internal/recovery"
+	"github.com/go-aie/actorx/dist/internal/recovery"
 	"github.com/nats-io/nats.go"
 )
 

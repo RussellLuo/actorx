@@ -1,9 +1,9 @@
-module github.com/RussellLuo/actorx/dist
+module github.com/go-aie/actorx/dist
 
 go 1.27
 
 require (
-	github.com/RussellLuo/actorx v0.0.0-20261026130950-7d90e9427227
+	github.com/go-aie/actorx v0.0.0
 	github.com/nats-io/nats.go v1.36.0
 )
 
@@ -14,3 +14,5 @@ require (
 	golang.org/x/crypto v0.18.0 // indirect
 	golang.org/x/sys v0.16.0 // indirect
 )
+
+replace github.com/go-aie/actorx => ..

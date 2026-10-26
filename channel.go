@@ -3,7 +3,7 @@ package actorx
 import (
 	"context"
 
-	"github.com/RussellLuo/actorx/internal/channelutil"
+	"github.com/go-aie/actorx/internal/channelutil"
 )
 
 // Kind selects admission-only Send, a final result, or a stream. It is channel

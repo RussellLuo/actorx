@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // Number deliberately matches encoding/json.Number in name and underlying type.

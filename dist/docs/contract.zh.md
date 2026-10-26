@@ -12,7 +12,7 @@ Type/ID 段统一采用原始字节的 RFC 4648 raw base64url。严格解码拒�
 
 subject 使用 `actord.factory.<type-token>`、`actord.factory.<type-token>.<factory-token>.control.confirm`、`.control.stop` 和 `actord.actor.<type-token>.<id-token>`。Factory queue group 是 `actord.factory.<type-token>.workers`，不是发布目的地。每 Factory 一个普通 control.* 订阅，无 queue group，跨越其所有代及 FAILED，在任何 STARTING 归属发布前安装/Flush，在全部所属工作结清后移除。每个有效实例一个普通业务订阅。confirm/stop 分别授权，不回退共享队列。
 
-为保持通信协议兼容，subject 命名空间沿用 `actord.*`。Go 模块路径和包名分别为 `github.com/RussellLuo/actorx/dist` 和 `dist`。
+为保持通信协议兼容，subject 命名空间沿用 `actord.*`。Go 模块路径和包名分别为 `github.com/go-aie/actorx/dist` 和 `dist`。
 
 ## schema 子集与指纹
 

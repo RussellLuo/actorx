@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/RussellLuo/actorx/internal/channelutil"
+	"github.com/go-aie/actorx/internal/channelutil"
 )
 
 type config struct {

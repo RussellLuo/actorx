@@ -11,7 +11,7 @@ Actorx 是一个 Go Actor 框架，帮助你构建通过消息协作的有状态
 以计数器为例：用一个对象保存计数，通过消息请求它累加并返回结果。
 
 ```go
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Add struct{ N int }
 

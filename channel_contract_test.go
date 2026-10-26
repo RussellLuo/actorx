@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type resourceMessage struct {

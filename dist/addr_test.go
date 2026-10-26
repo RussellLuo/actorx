@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func TestAddrValueSnapshotsAndStrictDecoding(t *testing.T) {

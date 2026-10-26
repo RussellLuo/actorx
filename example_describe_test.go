@@ -3,7 +3,7 @@ package actorx_test
 import (
 	"fmt"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type ReadCount struct{}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func checkLimitExample(err error) {

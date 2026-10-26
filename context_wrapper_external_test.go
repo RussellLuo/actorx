@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // This probe deliberately lives outside actorx and imports no integration layer.

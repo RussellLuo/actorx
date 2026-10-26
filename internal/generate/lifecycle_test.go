@@ -18,7 +18,7 @@ func TestLifecycleGenerationByEventType(t *testing.T) {
 			}
 
 			dir := fixture(t, map[string]string{"a.go": fmt.Sprintf(`package fixture
-import ax "github.com/RussellLuo/actorx"
+import ax "github.com/go-aie/actorx"
 type Begin = ax.Started
 type Stop struct{}
 %s
@@ -68,7 +68,7 @@ func TestLifecycleGeneratorRejectsUnsupportedBindings(t *testing.T) {
 				}
 
 				dir := fixture(t, map[string]string{"a.go": `package fixture
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 //actorx:actor
 type A struct{}
 func (*A) ` + event + sig + " { " + body + " }\n"})
@@ -86,7 +86,7 @@ func (*A) ` + event + sig + " { " + body + " }\n"})
 		"type Alias = actorx.Started\nfunc (*A) One(actorx.Context, actorx.Started) error { return nil }\nfunc (*A) Two(actorx.Context, Alias) error { return nil }",
 		"type Pointer *actorx.Started\nfunc (*A) One(actorx.Context, Pointer) error { return nil }",
 	} {
-		dir := fixture(t, map[string]string{"a.go": "package fixture\nimport \"github.com/RussellLuo/actorx\"\n//actorx:actor\ntype A struct{}\n" + declaration})
+		dir := fixture(t, map[string]string{"a.go": "package fixture\nimport \"github.com/go-aie/actorx\"\n//actorx:actor\ntype A struct{}\n" + declaration})
 		if err := Run(dir, "actorx.gen.go", false); err == nil {
 			t.Fatal("accepted invalid lifecycle declaration")
 		}

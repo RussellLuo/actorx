@@ -11,9 +11,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/RussellLuo/actorx"
-	dist "github.com/RussellLuo/actorx/dist/internal/fault"
-	"github.com/RussellLuo/actorx/dist/internal/strictjson"
+	"github.com/go-aie/actorx"
+	dist "github.com/go-aie/actorx/dist/internal/fault"
+	"github.com/go-aie/actorx/dist/internal/strictjson"
 )
 
 const MaxBytes = 8192

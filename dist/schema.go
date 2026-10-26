@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // wireContract contains canonical bytes, never business receivers or closures.
@@ -99,8 +99,8 @@ func (b *schemaBuilder) typ(t reflect.Type, depth int) (string, error) {
 		base = base.Elem()
 	}
 	if base != reflect.TypeFor[Addr]() &&
-		(base.PkgPath() == "github.com/RussellLuo/actorx" ||
-			(base.PkgPath() == "github.com/RussellLuo/actorx/dist" &&
+		(base.PkgPath() == "github.com/go-aie/actorx" ||
+			(base.PkgPath() == "github.com/go-aie/actorx/dist" &&
 				(base.Name() == "Runtime" || base.Name() == "Context" || base.Name() == "Addr"))) {
 		return bad()
 	}

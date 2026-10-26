@@ -1,4 +1,4 @@
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 package main
 
 import (
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type Message struct{ Text string }

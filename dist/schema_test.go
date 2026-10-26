@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // Freeze the v1 wire bytes and fingerprint independently of schema generation.

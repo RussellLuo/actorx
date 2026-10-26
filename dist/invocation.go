@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RussellLuo/actorx"
-	"github.com/RussellLuo/actorx/dist/internal/errwire"
-	"github.com/RussellLuo/actorx/dist/internal/strictjson"
+	"github.com/go-aie/actorx"
+	"github.com/go-aie/actorx/dist/internal/errwire"
+	"github.com/go-aie/actorx/dist/internal/strictjson"
 	"github.com/nats-io/nats.go"
 )
 

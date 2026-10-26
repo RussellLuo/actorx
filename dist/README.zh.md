@@ -12,8 +12,8 @@ Actorx Distributed（Go 包名 `dist`）是一个基于 [actorx](../README.zh.md
 
 ```go
 import (
-    "github.com/RussellLuo/actorx"
-    "github.com/RussellLuo/actorx/dist"
+    "github.com/go-aie/actorx"
+    "github.com/go-aie/actorx/dist"
 )
 
 type Add struct{ N int `json:"n"` }
@@ -57,7 +57,7 @@ Actor 内寻址使用 `dist.MustFrom(ctx).Addr(type, id)`，Self 可取得当前
 
 ## 实际运行
 
-需要 Go 1.27。当前示例从本仓库源码运行，dist 下载 go.mod 中固定的核心版本。
+需要 Go 1.27。当前示例从本仓库源码运行，dist 通过 go.mod 的本地 replace 使用上一级目录的核心源码。迁移后的核心发布后，再固定其版本并移除 replace，以验证发布模块的使用。
 
 先从 [NATS 官方 v2.10.18 发布页](https://github.com/nats-io/nats-server/releases/tag/v2.10.18)下载适合系统和架构的压缩包。以下以 macOS Apple Silicon 为例，下载、解压并将可执行文件加入当前终端 PATH；其他平台在同一发布页选择对应包：
 

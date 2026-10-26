@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func TestRouting(t *testing.T) {

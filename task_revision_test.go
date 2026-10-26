@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func TestOldRevisionCannotOverwriteNewOperation(t *testing.T) {

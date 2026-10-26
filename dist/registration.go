@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/RussellLuo/actorx"
-	"github.com/RussellLuo/actorx/dist/internal/identity"
+	"github.com/go-aie/actorx"
+	"github.com/go-aie/actorx/dist/internal/identity"
 )
 
 type registration struct {

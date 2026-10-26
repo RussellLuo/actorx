@@ -10,7 +10,7 @@ Requires Go 1.27+, with no external service needed. Start in an empty directory:
 mkdir counter-app
 cd counter-app
 go mod init example.com/counter-app
-go get github.com/RussellLuo/actorx
+go get github.com/go-aie/actorx
 ```
 
 ## 1. Define a message and an actor
@@ -18,7 +18,7 @@ go get github.com/RussellLuo/actorx
 `Add` represents an addition request, and `Counter` holds the count. Save the following as `main.go`:
 
 ```go
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 package main
 
 import (
@@ -26,7 +26,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/RussellLuo/actorx"
+    "github.com/go-aie/actorx"
 )
 
 type Add struct{ N int }

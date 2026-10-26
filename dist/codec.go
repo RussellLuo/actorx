@@ -10,8 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/RussellLuo/actorx"
-	"github.com/RussellLuo/actorx/dist/internal/strictjson"
+	"github.com/go-aie/actorx"
+	"github.com/go-aie/actorx/dist/internal/strictjson"
 )
 
 const maxPayload = 64 << 10

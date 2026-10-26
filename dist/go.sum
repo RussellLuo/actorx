@@ -1,5 +1,3 @@
-github.com/RussellLuo/actorx v0.0.0-20261026130950-7d90e9427227 h1:ex35prf/IBncYmK8A+FMWI/GAKX6opppBl02lrpfFvA=
-github.com/RussellLuo/actorx v0.0.0-20261026130950-7d90e9427227/go.mod h1:2W8cmOj3jA8J6V2oHscpkujqXdGBBlTSKiE/Gjz6lCY=
 github.com/klauspost/compress v1.17.2 h1:RlWWUY/Dr4fL8qk9YG7DTZ7PDgME2V4csBXA8L/ixi4=
 github.com/klauspost/compress v1.17.2/go.mod h1:ntbaceVETuRiXiv4DpjP66DpAtAGkEQskQzEyD//IeE=
 github.com/nats-io/nats.go v1.36.0 h1:suEUPuWzTSse/XhESwqLxXGuj8vGRuPRoG7MoRN/qyU=

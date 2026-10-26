@@ -20,7 +20,7 @@ import (
 )
 
 // ActorPath is the runtime package used by generated bindings and type checks.
-const ActorPath = "github.com/RussellLuo/actorx"
+const ActorPath = "github.com/go-aie/actorx"
 
 type listedPackage struct {
 	Dir        string

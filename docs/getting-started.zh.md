@@ -10,7 +10,7 @@
 mkdir counter-app
 cd counter-app
 go mod init example.com/counter-app
-go get github.com/RussellLuo/actorx
+go get github.com/go-aie/actorx
 ```
 
 ## 1. 定义消息和 Actor
@@ -18,7 +18,7 @@ go get github.com/RussellLuo/actorx
 `Add` 表示一次累加请求，`Counter` 保存计数。将以下代码保存为 `main.go`：
 
 ```go
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 package main
 
 import (
@@ -26,7 +26,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/RussellLuo/actorx"
+    "github.com/go-aie/actorx"
 )
 
 type Add struct{ N int }

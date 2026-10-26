@@ -1,9 +1,9 @@
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 package main
 
 import (
-	"github.com/RussellLuo/actorx"
-	"github.com/RussellLuo/actorx/dist"
+	"github.com/go-aie/actorx"
+	"github.com/go-aie/actorx/dist"
 )
 
 type Add struct {

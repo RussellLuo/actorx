@@ -1,6 +1,6 @@
 package dist
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 // ActorKey identifies a logical object across activations.
 // Validation takes place at Runtime entry points without network I/O.

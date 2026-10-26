@@ -24,7 +24,7 @@ func TestActorInterfaceAssertionBeforeAndAfterGeneration(t *testing.T) {
 	dir := fixture(t, map[string]string{"a.go": `package fixture
 
 import (
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type Q struct{}
@@ -74,7 +74,7 @@ func TestGeneratedBuildConstraints(t *testing.T) {
 
 package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Q struct{}
 
@@ -122,7 +122,7 @@ func TestGeneratedImplicitPlatformConstraint(t *testing.T) {
 		"base.go": "package fixture\n",
 		"actor_" + runtime.GOOS + ".go": `package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Q struct{}
 
@@ -150,7 +150,7 @@ func TestMixedBuildConstraintsAreRejectedWithoutWriting(t *testing.T) {
 	dir := fixture(t, map[string]string{
 		"a.go": `package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Q struct{}
 
@@ -163,7 +163,7 @@ func (*A) One(actorx.Context, Q) error { return nil }
 
 package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type R struct{}
 

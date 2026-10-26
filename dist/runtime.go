@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 const (

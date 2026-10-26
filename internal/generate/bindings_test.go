@@ -8,7 +8,7 @@ func TestGeneratedBindingsNilReceiverAndInstanceIsolation(t *testing.T) {
 	dir := fixture(t, map[string]string{
 		"a.go": `package fixture
 import (
- ax "github.com/RussellLuo/actorx"
+ ax "github.com/go-aie/actorx"
  "time"
 )
 type Add struct{ N int }
@@ -36,7 +36,7 @@ import (
  "reflect"
  "testing"
  "time"
- ax "github.com/RussellLuo/actorx"
+ ax "github.com/go-aie/actorx"
 )
 func TestBindings(t *testing.T) {
  var nilA *A
@@ -81,7 +81,7 @@ func TestBindings(t *testing.T) {
 func TestValueReceiverSignatureNamesDoNotCollide(t *testing.T) {
 	dir := fixture(t, map[string]string{"a.go": `package fixture
 import (
- ax "github.com/RussellLuo/actorx"
+ ax "github.com/go-aie/actorx"
  "time"
 )
 type a struct{}
@@ -105,7 +105,7 @@ func (A) More(ax.Context, actorxType0) error { return nil }
 func TestBindingsReservedNameConflict(t *testing.T) {
 	for _, marker := range []string{"", "//actorx:ignore\n"} {
 		dir := fixture(t, map[string]string{"a.go": `package fixture
-import ax "github.com/RussellLuo/actorx"
+import ax "github.com/go-aie/actorx"
 type Q struct{}
 //actorx:actor
 type A struct{}

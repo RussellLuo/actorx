@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/RussellLuo/actorx/internal/generate"
+	"github.com/go-aie/actorx/internal/generate"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func ExampleCounter_metadata() {

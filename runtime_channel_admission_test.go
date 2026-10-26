@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 func TestRuntimeChannelAdmission(t *testing.T) {

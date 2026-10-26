@@ -1,6 +1,6 @@
 package dist
 
-import "github.com/RussellLuo/actorx/dist/internal/fault"
+import "github.com/go-aie/actorx/dist/internal/fault"
 
 var (
 	ErrTypeUnavailable   = fault.ErrTypeUnavailable

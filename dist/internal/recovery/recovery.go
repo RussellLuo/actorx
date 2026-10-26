@@ -11,9 +11,9 @@ import (
 	"errors"
 	"io"
 
-	"github.com/RussellLuo/actorx/dist/internal/errwire"
-	"github.com/RussellLuo/actorx/dist/internal/identity"
-	"github.com/RussellLuo/actorx/dist/internal/strictjson"
+	"github.com/go-aie/actorx/dist/internal/errwire"
+	"github.com/go-aie/actorx/dist/internal/identity"
+	"github.com/go-aie/actorx/dist/internal/strictjson"
 	"github.com/nats-io/nats.go"
 )
 

@@ -12,7 +12,7 @@ Type/ID segments use canonical RFC 4648 raw base64url of the original bytes. Str
 
 Subjects are `actord.factory.<type-token>`, `actord.factory.<type-token>.<factory-token>.control.confirm`, `.control.stop` and `actord.actor.<type-token>.<id-token>`. The factory queue group is `actord.factory.<type-token>.workers`, not a publish destination. One ordinary `control.*` subscription per Factory spans all its generations and FAILED records, without a queue group. It is installed/flushed before any STARTING claim and removed only after all owned work settles. Business subscriptions are per active instance, without a queue group. Confirm/stop permissions are separate; neither falls back to a shared queue.
 
-The `actord.*` subject namespace is retained for wire compatibility. The Go module and package are `github.com/RussellLuo/actorx/dist` and `dist`.
+The `actord.*` subject namespace is retained for wire compatibility. The Go module and package are `github.com/go-aie/actorx/dist` and `dist`.
 
 ## Schema subset and fingerprint
 

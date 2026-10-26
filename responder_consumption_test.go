@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // Exercise the core consumption barrier through a minimal in-memory Channel.

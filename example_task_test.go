@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // Both discard and Stopped may encounter a resource after a completion panic.

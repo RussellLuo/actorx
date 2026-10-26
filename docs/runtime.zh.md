@@ -158,13 +158,13 @@ Describe 与 Spawn 共用校验，先校验所有绑定，再排除生命周期�
 在应用文件中添加指令并标记类型：
 
 ```go
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 
 //actorx:actor
 type Counter struct{ n int }
 ```
 
-在目标 package 运行 `go generate .`，或直接 `go run github.com/RussellLuo/actorx/cmd/actorx-gen`。首次接入见[快速入门](getting-started.zh.md)。默认按包生成一个 `actorx.gen.go`，支持 `-output 文件名` 与 `-check`。
+在目标 package 运行 `go generate .`，或直接 `go run github.com/go-aie/actorx/cmd/actorx-gen`。首次接入见[快速入门](getting-started.zh.md)。默认按包生成一个 `actorx.gen.go`，支持 `-output 文件名` 与 `-check`。
 
 - 类型标记选择公开、直接声明的方法，跨文件收集，支持 T / *T；私有方法、`//actorx:ignore` 与嵌入提升的方法不绑定。
 - 只选择少数方法时使用 `//actorx:handler`，同一类型不能混用两种选择。签名不符合四类 handler、重复消息或已有手写 Bindings 均报错。

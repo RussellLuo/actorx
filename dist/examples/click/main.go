@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/RussellLuo/actorx/dist"
+	"github.com/go-aie/actorx/dist"
 )
 
 func main() {

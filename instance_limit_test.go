@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type limitQuery struct{}

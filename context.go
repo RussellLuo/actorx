@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/RussellLuo/actorx/internal/channelutil"
+	"github.com/go-aie/actorx/internal/channelutil"
 )
 
 // Context carries a handler's cancellation, deadline, values, and actor ownership.

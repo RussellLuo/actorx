@@ -22,8 +22,8 @@ func fixture(t *testing.T, files map[string]string) string {
 
 go 1.27
 
-require github.com/RussellLuo/actorx v0.0.0
-replace github.com/RussellLuo/actorx => ` + root + "\n"
+require github.com/go-aie/actorx v0.0.0
+replace github.com/go-aie/actorx => ` + root + "\n"
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0644); err != nil {
 			t.Fatal(err)
@@ -37,7 +37,7 @@ func TestCrossFileMethodsAndDeterministicCheck(t *testing.T) {
 	dir := fixture(t, map[string]string{
 		"a.go": `package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Q struct{}
 
@@ -59,7 +59,7 @@ func (*A) Helper() {}
 `,
 		"b.go": `package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type HandlerContext = actorx.Context
 
@@ -243,7 +243,7 @@ func (*A) One(actorx.Context, ...Q) error { return nil }`,
 import (
 	"context"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 var _ context.Context
@@ -267,7 +267,7 @@ func TestExplicitAndDeferredStreamHandlers(t *testing.T) {
 	dir := fixture(t, map[string]string{"a.go": `package fixture
 
 import (
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type Q struct{}
@@ -306,7 +306,7 @@ func TestGeneratorPreservesHandwrittenOutput(t *testing.T) {
 	dir := fixture(t, map[string]string{
 		"a.go": `package fixture
 
-import "github.com/RussellLuo/actorx"
+import "github.com/go-aie/actorx"
 
 type Q struct{}
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 // Keep channel admission visible independently of lifecycle invocation.

@@ -1,6 +1,6 @@
 // Counter demonstrates generated bindings for a local actor with multiple messages.
 //
-//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
+//go:generate go run github.com/go-aie/actorx/cmd/actorx-gen
 package main
 
 import (
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/RussellLuo/actorx"
+	"github.com/go-aie/actorx"
 )
 
 type Add struct{ N int }

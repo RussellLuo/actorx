@@ -1,6 +1,6 @@
 package actorx
 
-import "github.com/RussellLuo/actorx/internal/channelutil"
+import "github.com/go-aie/actorx/internal/channelutil"
 
 // ValidInstanceID reports whether id is an Actorx instance identity: a_ followed
 // by 32 lowercase hexadecimal digits. It does not check existence or reachability.
