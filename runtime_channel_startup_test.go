@@ -85,6 +85,7 @@ func TestRuntimeChannelStartup(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			addr, err := rt.ImportAddr(data)
 			if err != nil {
 				t.Fatal(err)
@@ -115,8 +116,8 @@ func TestRuntimeChannelStartup(t *testing.T) {
 				if got, err := addr.Call[int](ctx, localQuery{}); got != 7 || err != nil {
 					t.Fatal(got, err)
 				}
-
 			}
+
 			a := <-successful
 			if !fail {
 				a.Stop(nil)

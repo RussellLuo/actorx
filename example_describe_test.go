@@ -18,8 +18,12 @@ func (c *Counter) Bindings() []actorx.Binding {
 	}
 }
 
-func (c *Counter) Started(actorx.Context, actorx.Started) error { c.count = 0; return nil }
-func (c *Counter) Read(actorx.Context, ReadCount) (int, error)  { return c.count, nil }
+func (c *Counter) Started(actorx.Context, actorx.Started) error {
+	c.count = 0
+	return nil
+}
+
+func (c *Counter) Read(actorx.Context, ReadCount) (int, error) { return c.count, nil }
 
 func ExampleDescribe() {
 	// No Counter instance, Runtime, or handler execution is needed for metadata.

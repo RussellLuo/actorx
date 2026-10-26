@@ -42,7 +42,8 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 						t.Error("incorrect startup context")
 					}
 
-					_, err := StartTask(ctx, func(context.Context) (int, error) { return 7, nil },
+					_, err := StartTask(ctx,
+						func(context.Context) (int, error) { return 7, nil },
 						func(v int, err error) bool {
 							if ctx.State() != StateRunning || v != 7 || err != nil {
 								t.Error("incorrect startup completion")
@@ -50,7 +51,9 @@ func TestLifecycleAdmissionStateAndOrder(t *testing.T) {
 
 							order = append(order, "completion")
 							return true
-						}, nil)
+						},
+						nil,
+					)
 					ready <- ctx
 					<-releaseStart
 					return err
@@ -207,23 +210,27 @@ func TestLifecycleStartedFailureRollsBackLateTask(t *testing.T) {
 				return []Binding{
 					HandleMessage(func(ctx Context, _ Started) error {
 						actor = ctx.actorContext().actor
-						_, err := StartTask(ctx, func(ctx context.Context) (int, error) {
-							<-unblock // Stopping must unblock before worker waiting.
-							if !tc.queued && ctx.Err() != context.Canceled {
-								t.Error("startup worker not cancelled")
-							}
+						_, err := StartTask(ctx,
+							func(ctx context.Context) (int, error) {
+								<-unblock // Stopping must unblock before worker waiting.
+								if !tc.queued && ctx.Err() != context.Canceled {
+									t.Error("startup worker not cancelled")
+								}
 
-							return 42, nil
-						}, func(int, error) bool {
-							delivered.Add(1)
-							return true
-						}, func(v int) {
-							if v != 42 {
-								t.Error(v)
-							}
+								return 42, nil
+							},
+							func(int, error) bool {
+								delivered.Add(1)
+								return true
+							},
+							func(v int) {
+								if v != 42 {
+									t.Error(v)
+								}
 
-							discarded.Add(1)
-						})
+								discarded.Add(1)
+							},
+						)
 						if err != nil {
 							return err
 						}
@@ -369,9 +376,18 @@ func TestLifecyclePreStartFailureSkipsHooks(t *testing.T) {
 			hooks := 0
 			_, err := rt.Spawn(bindingsFunc(func() []Binding {
 				entries := []Binding{
-					HandleMessage(func(Context, Started) error { hooks++; return nil }),
-					HandleMessage(func(Context, Stopping) error { hooks++; return nil }),
-					HandleMessage(func(Context, Stopped) error { hooks++; return nil }),
+					HandleMessage(func(Context, Started) error {
+						hooks++
+						return nil
+					}),
+					HandleMessage(func(Context, Stopping) error {
+						hooks++
+						return nil
+					}),
+					HandleMessage(func(Context, Stopped) error {
+						hooks++
+						return nil
+					}),
 				}
 				if stage == "panic" {
 					panic("bindings failed")
@@ -524,7 +540,10 @@ func TestLifecycleExitPanicsContinueAfterBindingRelease(t *testing.T) {
 		addr, err := rt.Spawn(bindingsFunc(func() []Binding {
 			// An actor with no Started binding still enters the startup stage.
 			return []Binding{
-				HandleMessage(func(Context, Stopping) error { defer func() { cleaned = true }(); panic("stopping panic") }),
+				HandleMessage(func(Context, Stopping) error {
+					defer func() { cleaned = true }()
+					panic("stopping panic")
+				}),
 				HandleMessage(func(ctx Context, msg Stopped) error {
 					if !cleaned || d.released.Load() != 1 || ctx.State() != StateStopped {
 						t.Error("finalized before cleanup/release")

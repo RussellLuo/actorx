@@ -33,22 +33,29 @@ func probeContextFactory(value actorx.Actor) (actorx.ContextWrapper, error) {
 	if a, ok := value.(*executionProbe); ok {
 		return a.wrap, nil
 	}
+
 	return func(c actorx.Context) actorx.Context { return c }, nil
 }
 
 func coreRuntime(t *testing.T, opts ...actorx.Option) *actorx.Runtime {
 	t.Helper()
-	rt, err := actorx.NewRuntime(context.Background(), append([]actorx.Option{actorx.WithContextFactory(probeContextFactory)}, opts...)...)
+
+	rt, err := actorx.NewRuntime(context.Background(),
+		append([]actorx.Option{actorx.WithContextFactory(probeContextFactory)}, opts...)...,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
+
 		if err := rt.Close(ctx); err != nil {
 			t.Error(err)
 		}
 	})
+
 	return rt
 }
 
@@ -61,15 +68,18 @@ func capabilityCheck(ctx actorx.Context, token *int) error {
 			return errors.New("derived context changed actor")
 		}
 	}
+
 	return nil
 }
 
 type contextKey struct{}
+
 type contextQuery struct{ value string }
 
 func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
 	var wg sync.WaitGroup
 	for range 2 {
 		rt := coreRuntime(t)
@@ -77,12 +87,14 @@ func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+
 				token := new(int)
 				events := make(chan string, 4)
 				check := func(ctx actorx.Context, phase string) error {
 					if err := capabilityCheck(ctx, token); err != nil {
 						return err
 					}
+
 					events <- phase
 					return nil
 				}
@@ -97,8 +109,10 @@ func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 								if err := check(c, "started"); err != nil {
 									return err
 								}
+
 								derived := c.WithContext(context.Background()).WithContext(context.Background())
-								_, err := actorx.StartTask(derived, func(context.Context) (int, error) { return 7, nil },
+								_, err := actorx.StartTask(derived,
+									func(context.Context) (int, error) { return 7, nil },
 									func(n int, err error) bool {
 										if n != 7 || err != nil {
 											t.Error(n, err)
@@ -106,14 +120,18 @@ func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 										if err := check(derived, "complete"); err != nil {
 											t.Error(err)
 										}
+
 										return true
-									}, nil)
+									},
+									nil,
+								)
 								return err
 							}),
 							actorx.Handle(func(c actorx.Context, q contextQuery) (*int, error) {
 								if c.Value(contextKey{}) != q.value {
 									return nil, errors.New("request values mixed")
 								}
+
 								return token, capabilityCheck(c, token)
 							}),
 							actorx.HandleMessage(func(c actorx.Context, _ actorx.Stopping) error { return check(c, "stopping") }),
@@ -126,18 +144,23 @@ func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 					t.Error(err)
 					return
 				}
+
+				// Concurrent requests must retain their own values and the same instance token.
 				var requests sync.WaitGroup
 				for i := range 4 {
 					requests.Add(1)
 					go func() {
 						defer requests.Done()
+
 						value := fmt.Sprint(i)
 						if got, err := addr.Call[*int](context.WithValue(ctx, contextKey{}, value), contextQuery{value}); err != nil || got != token {
 							t.Error(got, err)
 						}
 					}()
 				}
+
 				requests.Wait()
+
 				for _, want := range []string{"started", "complete"} {
 					select {
 					case got := <-events:
@@ -149,10 +172,13 @@ func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 						return
 					}
 				}
+
+				// Complete startup work before checking the shutdown lifecycle sequence.
 				_ = addr.Stop(nil)
 				if exit, err := addr.Wait(ctx); err != nil || exit.Reason != nil {
 					t.Error(exit, err)
 				}
+
 				for _, want := range []string{"stopping", "stopped"} {
 					select {
 					case got := <-events:
@@ -167,11 +193,13 @@ func TestExternalContextAcrossRuntimesInstancesAndRequests(t *testing.T) {
 			}()
 		}
 	}
+
 	wg.Wait()
 }
 
 func captureCoreContext(t *testing.T) actorx.Context {
 	t.Helper()
+
 	rt := coreRuntime(t)
 	addr, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 		return []actorx.Binding{actorx.Handle(func(c actorx.Context, _ contextQuery) (actorx.Context, error) { return c, nil })}
@@ -179,10 +207,12 @@ func captureCoreContext(t *testing.T) actorx.Context {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	c, err := addr.Call[actorx.Context](context.Background(), contextQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return c
 }
 
@@ -207,6 +237,8 @@ func TestExternalContextWrapperFailures(t *testing.T) {
 		for _, phase := range []string{"started", "handler", "derived", "stopping", "stopped"} {
 			t.Run(tc.name+"/"+phase, func(t *testing.T) {
 				rt := coreRuntime(t, actorx.WithInstanceLimit(1))
+
+				// Count wrapper calls, including WithContext, to fail at one precise boundary.
 				failAt := map[string]int{"started": 1, "handler": 2, "derived": 3, "stopping": 2, "stopped": 3}[phase]
 				calls := 0
 				var old actorx.Context
@@ -220,21 +252,32 @@ func TestExternalContextWrapperFailures(t *testing.T) {
 						if old == nil {
 							old = c
 						}
+
 						return &capabilityContext{Context: c}
 					},
 					bindings: func() []actorx.Binding {
 						return []actorx.Binding{
-							actorx.HandleMessage(func(actorx.Context, actorx.Started) error { invoked["started"]++; return nil }),
+							actorx.HandleMessage(func(actorx.Context, actorx.Started) error {
+								invoked["started"]++
+								return nil
+							}),
 							actorx.Handle(func(c actorx.Context, _ contextQuery) (int, error) {
 								invoked["handler"]++
 								if phase == "derived" {
 									c.WithContext(context.Background())
 									t.Error("derived failure returned")
 								}
+
 								return 1, nil
 							}),
-							actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error { invoked["stopping"]++; return nil }),
-							actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error { invoked["stopped"]++; return nil }),
+							actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error {
+								invoked["stopping"]++
+								return nil
+							}),
+							actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error {
+								invoked["stopped"]++
+								return nil
+							}),
 						}
 					},
 				}
@@ -255,10 +298,12 @@ func TestExternalContextWrapperFailures(t *testing.T) {
 					} else {
 						_ = addr.Stop(nil)
 					}
+
 					exit, waitErr := addr.Wait(context.Background())
 					if waitErr != nil {
 						t.Fatal(waitErr)
 					}
+
 					err = exit.Reason
 				}
 				if phase == "derived" {
@@ -266,6 +311,7 @@ func TestExternalContextWrapperFailures(t *testing.T) {
 					if !errors.As(err, &p) {
 						t.Fatal("missing handler panic", err)
 					}
+
 					var ok bool
 					err, ok = p.Value.(error)
 					if !ok {
@@ -281,6 +327,7 @@ func TestExternalContextWrapperFailures(t *testing.T) {
 						t.Fatal("panic diagnostic lost", err)
 					}
 				}
+
 				for _, stage := range []string{"started", "handler", "stopping", "stopped"} {
 					want := 1
 					if stage == phase || (stage == "handler" && phase != "derived") {
@@ -290,6 +337,7 @@ func TestExternalContextWrapperFailures(t *testing.T) {
 						t.Errorf("%s invoked %d times, want %d", stage, invoked[stage], want)
 					}
 				}
+
 				// Full exit, including failed startup rollback, must return the slot.
 				if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding { return nil })); err != nil {
 					t.Fatal("budget leaked", err)
@@ -306,29 +354,53 @@ func TestExternalStartTaskRejectsInvalidOwnershipBeforeReservation(t *testing.T)
 	addr, err := rt.Spawn(&executionProbe{
 		wrap: valid,
 		bindings: func() []actorx.Binding {
-			return []actorx.Binding{actorx.HandleMessage(func(c actorx.Context, _ actorx.Started) error {
-				for _, bad := range []actorx.Context{nil, (*capabilityContext)(nil), &capabilityContext{}, &capabilityContext{Context: (*capabilityContext)(nil)}} {
-					cancel, err := actorx.StartTask(bad,
-						func(context.Context) (int, error) { t.Error("invalid worker started"); return 0, nil },
-						func(int, error) bool { t.Error("invalid completion ran"); return true }, nil)
-					if cancel != nil || !errors.Is(err, actorx.ErrSetup) {
-						t.Error(cancel, err)
+			return []actorx.Binding{
+				actorx.HandleMessage(func(c actorx.Context, _ actorx.Started) error {
+					for _, bad := range []actorx.Context{
+						nil,
+						(*capabilityContext)(nil),
+						&capabilityContext{},
+						&capabilityContext{Context: (*capabilityContext)(nil)},
+					} {
+						cancel, err := actorx.StartTask(bad,
+							func(context.Context) (int, error) {
+								t.Error("invalid worker started")
+								return 0, nil
+							},
+							func(int, error) bool {
+								t.Error("invalid completion ran")
+								return true
+							},
+							nil,
+						)
+						if cancel != nil || !errors.Is(err, actorx.ErrSetup) {
+							t.Error(cancel, err)
+						}
 					}
-				}
-				_, err := actorx.StartTask(c, func(context.Context) (int, error) { return 1, nil },
-					func(int, error) bool { close(done); return true }, nil)
-				return err
-			})}
+
+					_, err := actorx.StartTask(c,
+						func(context.Context) (int, error) { return 1, nil },
+						func(int, error) bool {
+							close(done)
+							return true
+						},
+						nil,
+					)
+					return err
+				}),
+			}
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("valid task did not complete after invalid inputs")
 	}
+
 	_ = addr.Stop(nil)
 }
 
@@ -340,37 +412,47 @@ func TestExternalContextDerivedParentControlsTask(t *testing.T) {
 			addr, err := rt.Spawn(&executionProbe{
 				wrap: func(c actorx.Context) actorx.Context { return &capabilityContext{Context: c, token: token} },
 				bindings: func() []actorx.Binding {
-					return []actorx.Binding{actorx.HandleDeferred(func(c actorx.Context, q contextQuery, reply actorx.Reply[bool]) error {
-						deadline := time.Now().Add(time.Second)
-						if mode == "deadline" {
-							deadline = time.Now().Add(20 * time.Millisecond)
-						}
-						parent, cancel := context.WithDeadline(context.WithValue(context.Background(), contextKey{}, q.value), deadline)
-						derived := c.WithContext(context.Background()).WithContext(parent)
-						_, err := actorx.StartTask(derived, func(work context.Context) (bool, error) {
-							got, ok := work.Deadline()
-							matches := ok && got.Equal(deadline) && work.Value(contextKey{}) == q.value
-							<-work.Done()
-							return matches, work.Err()
-						}, func(matches bool, err error) bool {
-							defer cancel()
-							want := context.Canceled
+					return []actorx.Binding{
+						actorx.HandleDeferred(func(c actorx.Context, q contextQuery, reply actorx.Reply[bool]) error {
+							deadline := time.Now().Add(time.Second)
 							if mode == "deadline" {
-								want = context.DeadlineExceeded
+								deadline = time.Now().Add(20 * time.Millisecond)
 							}
-							reply.Complete(matches && errors.Is(err, want), capabilityCheck(derived, token))
-							return true
-						}, nil)
-						if mode == "cancel" || err != nil {
-							cancel()
-						}
-						return err
-					})}
+
+							parent, cancel := context.WithDeadline(context.WithValue(context.Background(), contextKey{}, q.value), deadline)
+							derived := c.WithContext(context.Background()).WithContext(parent)
+							_, err := actorx.StartTask(derived,
+								func(work context.Context) (bool, error) {
+									got, ok := work.Deadline()
+									matches := ok && got.Equal(deadline) && work.Value(contextKey{}) == q.value
+									<-work.Done()
+									return matches, work.Err()
+								},
+								func(matches bool, err error) bool {
+									defer cancel()
+									want := context.Canceled
+									if mode == "deadline" {
+										want = context.DeadlineExceeded
+									}
+
+									reply.Complete(matches && errors.Is(err, want), capabilityCheck(derived, token))
+									return true
+								},
+								nil,
+							)
+							if mode == "cancel" || err != nil {
+								cancel()
+							}
+
+							return err
+						}),
+					}
 				},
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			if ok, err := addr.Call[bool](ctx, contextQuery{"new parent"}); !ok || err != nil {
@@ -386,56 +468,84 @@ func TestWrapperFailureDoesNotReleaseBlockedWorkerBudget(t *testing.T) {
 	var once sync.Once
 	release := func() { once.Do(func() { close(unblock) }) }
 	t.Cleanup(release)
+
 	calls, stopping, stopped := 0, 0, 0
 	addr, err := rt.Spawn(&executionProbe{
 		wrap: func(c actorx.Context) actorx.Context {
 			calls++
 			if calls == 2 {
+				// Reject Stopping so its handler cannot release the blocked worker.
 				close(failed)
 				return nil
-			} // Stopping cannot release the worker.
+			}
+
 			return &capabilityContext{Context: c}
 		},
 		bindings: func() []actorx.Binding {
 			return []actorx.Binding{
 				actorx.HandleMessage(func(c actorx.Context, _ actorx.Started) error {
-					_, err := actorx.StartTask(c, func(context.Context) (int, error) {
-						close(working)
-						<-unblock
-						return 0, nil
-					}, func(int, error) bool { t.Error("completion ran after Stop"); return true }, func(int) { close(discarded) })
+					_, err := actorx.StartTask(c,
+						func(context.Context) (int, error) {
+							close(working)
+							<-unblock
+							return 0, nil
+						},
+						func(int, error) bool {
+							t.Error("completion ran after Stop")
+							return true
+						},
+						func(int) { close(discarded) },
+					)
 					return err
 				}),
-				actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error { stopping++; release(); return nil }),
-				actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error { stopped++; return nil }),
+				actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error {
+					stopping++
+					release()
+					return nil
+				}),
+				actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error {
+					stopped++
+					return nil
+				}),
 			}
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	<-working
 	_ = addr.Stop(nil)
 	<-failed
+
+	// A failed Stopping wrapper must leave Wait and the instance budget pending.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	if _, err := addr.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("Wait did not join worker", err)
 	}
+
 	reads := 0
-	fresh := bindingsFunc(func() []actorx.Binding { reads++; return nil })
+	fresh := bindingsFunc(func() []actorx.Binding {
+		reads++
+		return nil
+	})
 	if addr, err := rt.Spawn(fresh); !addr.IsZero() || !errors.Is(err, actorx.ErrFull) || reads != 0 {
 		t.Fatal(addr, err, reads)
 	}
+
+	// Only worker settlement and discard may return the instance slot.
 	release()
 	if exit, err := addr.Wait(context.Background()); err != nil || !errors.Is(exit.Reason, actorx.ErrSetup) {
 		t.Fatal(exit, err)
 	}
+
 	select {
 	case <-discarded:
 	default:
 		t.Error("exit published before discard")
 	}
+
 	if stopping != 0 || stopped != 1 {
 		t.Fatal(stopping, stopped)
 	}
@@ -456,22 +566,30 @@ func TestExternalRejectsRetainedRequestContext(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+
 				retained, err = addr.Call[actorx.Context](context.Background(), contextQuery{})
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
+
 			invoked := 0
 			addr, err := rt.Spawn(&executionProbe{
 				wrap: func(c actorx.Context) actorx.Context {
 					if retained != nil {
 						return retained
 					}
+
 					retained = c
 					return &capabilityContext{Context: c}
 				},
 				bindings: func() []actorx.Binding {
-					return []actorx.Binding{actorx.Handle(func(actorx.Context, contextQuery) (int, error) { invoked++; return 1, nil })}
+					return []actorx.Binding{
+						actorx.Handle(func(actorx.Context, contextQuery) (int, error) {
+							invoked++
+							return 1, nil
+						}),
+					}
 				},
 			})
 			if err != nil {
@@ -485,10 +603,12 @@ func TestExternalRejectsRetainedRequestContext(t *testing.T) {
 			if _, err := addr.Call[int](context.Background(), contextQuery{}); !errors.Is(err, actorx.ErrSetup) {
 				t.Fatal("retained request accepted", err)
 			}
+
 			exit, err := addr.Wait(context.Background())
 			if err != nil || !errors.Is(exit.Reason, actorx.ErrSetup) {
 				t.Fatal(exit, err)
 			}
+
 			want := 0
 			if source == "same-instance" {
 				want = 1

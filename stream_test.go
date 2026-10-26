@@ -165,10 +165,12 @@ func TestStreamStopWithoutTerminal(t *testing.T) {
 	rt := runtimeFor(t)
 	entered := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleStream(func(ctx Context, _ get, _ StreamReply[int]) error {
-			close(entered)
-			return nil
-		})}
+		return []Binding{
+			HandleStream(func(ctx Context, _ get, _ StreamReply[int]) error {
+				close(entered)
+				return nil
+			}),
+		}
 	})
 
 	result := make(chan error, 1)
@@ -234,18 +236,20 @@ func TestStreamCancelDuringFinalDrain(t *testing.T) {
 	rt := runtimeFor(t)
 	terminated := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleStream(func(ctx Context, _ get, s StreamReply[int]) error {
-			_, err := StartTask(ctx,
-				func(ctx context.Context) (int, error) { return 0, s.Write(ctx, 1, 1) },
-				func(_ int, err error) bool {
-					s.Complete(err)
-					close(terminated)
-					return true
-				},
-				nil,
-			)
-			return err
-		})}
+		return []Binding{
+			HandleStream(func(ctx Context, _ get, s StreamReply[int]) error {
+				_, err := StartTask(ctx,
+					func(ctx context.Context) (int, error) { return 0, s.Write(ctx, 1, 1) },
+					func(_ int, err error) bool {
+						s.Complete(err)
+						close(terminated)
+						return true
+					},
+					nil,
+				)
+				return err
+			}),
+		}
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

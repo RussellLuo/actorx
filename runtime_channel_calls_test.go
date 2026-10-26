@@ -65,15 +65,19 @@ func testRuntimeChannelCalls(t *testing.T, ch actorx.Channel) {
 				return err
 			}),
 			actorx.HandleStream(func(ctx actorx.Context, _ localChunks, reply actorx.StreamReply[int]) error {
-				_, err := actorx.StartTask(ctx, func(work context.Context) (struct{}, error) {
-					for i := range 3 {
-						if err := reply.Write(work, i, 1); err != nil {
-							return struct{}{}, err
+				_, err := actorx.StartTask(ctx,
+					func(work context.Context) (struct{}, error) {
+						for i := range 3 {
+							if err := reply.Write(work, i, 1); err != nil {
+								return struct{}{}, err
+							}
 						}
-					}
 
-					return struct{}{}, nil
-				}, func(_ struct{}, err error) bool { return reply.Complete(err) }, nil)
+						return struct{}{}, nil
+					},
+					func(_ struct{}, err error) bool { return reply.Complete(err) },
+					nil,
+				)
 				return err
 			}),
 		}

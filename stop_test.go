@@ -69,14 +69,18 @@ func TestAddrStopFullBudgetsAndHandlerBarrier(t *testing.T) {
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{
 			HandleDeferred(func(ctx Context, _ get, _ Reply[int]) error {
-				if _, err := StartTask(ctx, func(workCtx context.Context) (int, error) {
-					<-workCtx.Done()
-					close(workerCanceled)
-					return 0, workCtx.Err()
-				}, func(int, error) bool {
-					t.Error("completion after stop")
-					return true
-				}, nil); err != nil {
+				if _, err := StartTask(ctx,
+					func(workCtx context.Context) (int, error) {
+						<-workCtx.Done()
+						close(workerCanceled)
+						return 0, workCtx.Err()
+					},
+					func(int, error) bool {
+						t.Error("completion after stop")
+						return true
+					},
+					nil,
+				); err != nil {
 					return err
 				}
 
@@ -172,11 +176,15 @@ func TestContextStopPhases(t *testing.T) {
 							stop(ctx)
 						}
 						if phase == "completion" {
-							_, err := StartTask(ctx, func(context.Context) (int, error) { return 1, nil }, func(int, error) bool {
-								stop(ctx)
-								callbacks.Add(1)
-								return true
-							}, nil)
+							_, err := StartTask(ctx,
+								func(context.Context) (int, error) { return 1, nil },
+								func(int, error) bool {
+									stop(ctx)
+									callbacks.Add(1)
+									return true
+								},
+								nil,
+							)
 							return err
 						}
 
@@ -264,12 +272,18 @@ func TestAddrStopStartupPublicationRace(t *testing.T) {
 		var cleanups atomic.Int32
 		go func() {
 			a, err := rt.Spawn(bindingsFunc(func() []Binding {
-				return []Binding{HandleMessage(func(Context, Stopped) error { cleanups.Add(1); return nil }), HandleMessage(func(ctx Context, _ Started) error {
-					early <- ctx.actorContext().actor.addr()
-					close(entered)
-					<-release
-					return nil
-				})}
+				return []Binding{
+					HandleMessage(func(Context, Stopped) error {
+						cleanups.Add(1)
+						return nil
+					}),
+					HandleMessage(func(ctx Context, _ Started) error {
+						early <- ctx.actorContext().actor.addr()
+						close(entered)
+						<-release
+						return nil
+					}),
+				}
 			}))
 			result <- spawnResult{a, err}
 		}()

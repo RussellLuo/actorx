@@ -16,28 +16,30 @@ func TestHandlerContextPreservesRequestDeadlineAndValues(t *testing.T) {
 
 	rt := runtimeFor(t)
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx Context, _ get, reply Reply[result]) error {
-			// Standard context helpers and SDKs accept the handler context directly.
-			parent, cancel := context.WithCancel(ctx)
-			_, err := StartTask(ctx.WithContext(parent),
-				func(ctx context.Context) (result, error) {
-					defer cancel()
+		return []Binding{
+			HandleDeferred(func(ctx Context, _ get, reply Reply[result]) error {
+				// Standard context helpers and SDKs accept the handler context directly.
+				parent, cancel := context.WithCancel(ctx)
+				_, err := StartTask(ctx.WithContext(parent),
+					func(ctx context.Context) (result, error) {
+						defer cancel()
 
-					deadline, _ := ctx.Deadline()
-					return result{Value: ctx.Value(key{}), Deadline: deadline}, nil
-				},
-				func(value result, err error) bool {
-					reply.Complete(value, err)
-					return true
-				},
-				nil,
-			)
-			if err != nil {
-				cancel()
-			}
+						deadline, _ := ctx.Deadline()
+						return result{Value: ctx.Value(key{}), Deadline: deadline}, nil
+					},
+					func(value result, err error) bool {
+						reply.Complete(value, err)
+						return true
+					},
+					nil,
+				)
+				if err != nil {
+					cancel()
+				}
 
-			return err
-		})}
+				return err
+			}),
+		}
 	})
 
 	parent := context.WithValue(context.Background(), key{}, "request value")
@@ -60,22 +62,24 @@ func TestOwnedTaskObservesRequestCancellation(t *testing.T) {
 	started := make(chan struct{})
 	stopped := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleDeferred(func(ctx Context, _ get, reply Reply[int]) error {
-			_, err := StartTask(ctx,
-				func(ctx context.Context) (int, error) {
-					close(started)
-					<-ctx.Done()
-					close(stopped)
-					return 0, ctx.Err()
-				},
-				func(value int, err error) bool {
-					reply.Complete(value, err)
-					return true
-				},
-				nil,
-			)
-			return err
-		})}
+		return []Binding{
+			HandleDeferred(func(ctx Context, _ get, reply Reply[int]) error {
+				_, err := StartTask(ctx,
+					func(ctx context.Context) (int, error) {
+						close(started)
+						<-ctx.Done()
+						close(stopped)
+						return 0, ctx.Err()
+					},
+					func(value int, err error) bool {
+						reply.Complete(value, err)
+						return true
+					},
+					nil,
+				)
+				return err
+			}),
+		}
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -104,31 +108,33 @@ func TestDetachedTaskKeepsItsActorOwner(t *testing.T) {
 
 	for i := range actors {
 		actors[i] = spawnFor(t, rt, func() []Binding {
-			return []Binding{HandleDeferred(func(ctx Context, _ get, reply Reply[int]) error {
-				// Remove request cancellation while retaining the current actor owner.
-				ctx = ctx.WithContext(context.WithoutCancel(ctx))
-				_, err := StartTask(ctx,
-					func(ctx context.Context) (int, error) {
-						close(started[i])
-						defer close(stopped[i])
+			return []Binding{
+				HandleDeferred(func(ctx Context, _ get, reply Reply[int]) error {
+					// Remove request cancellation while retaining the current actor owner.
+					ctx = ctx.WithContext(context.WithoutCancel(ctx))
+					_, err := StartTask(ctx,
+						func(ctx context.Context) (int, error) {
+							close(started[i])
+							defer close(stopped[i])
 
-						for {
-							select {
-							case probe := <-probes[i]:
-								probe <- ctx.Err()
-							case <-ctx.Done():
-								return 0, ctx.Err()
+							for {
+								select {
+								case probe := <-probes[i]:
+									probe <- ctx.Err()
+								case <-ctx.Done():
+									return 0, ctx.Err()
+								}
 							}
-						}
-					},
-					func(value int, err error) bool {
-						reply.Complete(value, err)
-						return true
-					},
-					nil,
-				)
-				return err
-			})}
+						},
+						func(value int, err error) bool {
+							reply.Complete(value, err)
+							return true
+						},
+						nil,
+					)
+					return err
+				}),
+			}
 		})
 	}
 
@@ -161,6 +167,7 @@ func TestDetachedTaskKeepsItsActorOwner(t *testing.T) {
 
 	probe := func(i int) {
 		t.Helper()
+
 		reply := make(chan error, 1)
 		probes[i] <- reply
 		select {
@@ -213,6 +220,7 @@ func (c ownerOverride) actorContext() *localContext {
 	if c.panicValue != nil {
 		panic(c.panicValue)
 	}
+
 	return c.owner
 }
 
@@ -228,14 +236,22 @@ func TestPrivateContextOwnershipValidation(t *testing.T) {
 		ownerOverride{panicValue: "invalid forwarding"},
 	} {
 		if cancel, err := StartTask(bad,
-			func(context.Context) (int, error) { t.Error("invalid worker started"); return 0, nil },
-			func(int, error) bool { t.Error("invalid completion ran"); return true }, nil,
+			func(context.Context) (int, error) {
+				t.Error("invalid worker started")
+				return 0, nil
+			},
+			func(int, error) bool {
+				t.Error("invalid completion ran")
+				return true
+			},
+			nil,
 		); cancel != nil || !errors.Is(err, ErrSetup) {
 			t.Fatal(cancel, err)
 		}
 		if len(a.work) != 0 || a.reserved != 0 {
 			t.Fatal("invalid ownership reserved resources")
 		}
+
 		a.contextWrapper = func(Context) Context { return bad }
 		if ctx, err := a.newContext(context.Background()); ctx != nil || !errors.Is(err, ErrSetup) {
 			t.Fatal(ctx, err)

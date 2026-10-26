@@ -425,10 +425,12 @@ func TestExternalReceiverRejectsDifferentInstance(t *testing.T) {
 	rt := seamRuntime(t, d)
 	var invoked atomic.Int32
 	a, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.Handle(func(actorx.Context, seamQuery) (int, error) {
-			invoked.Add(1)
-			return 7, nil
-		})}
+		return []actorx.Binding{
+			actorx.Handle(func(actorx.Context, seamQuery) (int, error) {
+				invoked.Add(1)
+				return 7, nil
+			}),
+		}
 	}))
 	if err != nil {
 		t.Fatal(err)

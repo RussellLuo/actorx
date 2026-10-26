@@ -16,6 +16,7 @@ func TestBindingsInstallationCopiesSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	entries[0] = Handle(func(Context, get) (int, error) { return 99, nil })
 	if got, err := addr.Call[int](context.Background(), get{}); err != nil || got != 7 {
 		t.Fatal(got, err)
@@ -27,11 +28,13 @@ func TestBindingsInstallationCopiesSlice(t *testing.T) {
 func TestResourceOwnershipAcrossStartupFailure(t *testing.T) {
 	for _, beforeStart := range []bool{false, true} {
 		for _, panicStart := range []bool{false, true} {
-			t.Run(map[bool]string{false: "started", true: "binding"}[beforeStart]+map[bool]string{false: "-error", true: "-panic"}[panicStart], func(t *testing.T) {
+			t.Run(map[bool]string{false: "started", true: "binding"}[beforeStart]+
+				map[bool]string{false: "-error", true: "-panic"}[panicStart], func(t *testing.T) {
 				file, err := os.CreateTemp(t.TempDir(), "owned-*")
 				if err != nil {
 					t.Fatal(err)
 				}
+
 				var once sync.Once
 				var releases, stopped atomic.Int32
 				release := func() {
@@ -48,6 +51,7 @@ func TestResourceOwnershipAcrossStartupFailure(t *testing.T) {
 				if beforeStart {
 					options = append(options, WithChannel(&spawnFailureChannel{err: failure}))
 				}
+
 				rt := runtimeFor(t, options...)
 				var adopted *os.File
 				addr, err := rt.Spawn(bindingsFunc(func() []Binding {
@@ -57,15 +61,20 @@ func TestResourceOwnershipAcrossStartupFailure(t *testing.T) {
 							if panicStart {
 								panic(failure)
 							}
+
 							return failure
 						}),
 						HandleMessage(func(Context, Stopping) error {
 							if adopted != nil {
 								release()
 							}
+
 							return nil
 						}),
-						HandleMessage(func(Context, Stopped) error { stopped.Add(1); return nil }),
+						HandleMessage(func(Context, Stopped) error {
+							stopped.Add(1)
+							return nil
+						}),
 					}
 				}))
 				if !addr.IsZero() || err == nil {
@@ -78,10 +87,12 @@ func TestResourceOwnershipAcrossStartupFailure(t *testing.T) {
 					if _, err := file.Stat(); err != nil {
 						t.Fatal("caller resource closed prematurely", err)
 					}
+
 					release() // caller releases on failure; idempotent with entered-startup cleanup.
 				} else if stopped.Load() != 1 {
 					t.Fatal("Spawn returned before Stopped")
 				}
+
 				release()
 				if releases.Load() != 1 {
 					t.Fatal(releases.Load())

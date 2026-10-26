@@ -39,8 +39,10 @@ func TestContextFactoryOptionValidationAndOverride(t *testing.T) {
 			})
 			nilFactory := actorx.WithContextFactory(nil)
 			opts := map[string][]actorx.Option{
-				"nil": {nilFactory}, "valid-nil": {first, nilFactory},
-				"nil-valid": {nilFactory, last}, "first-last": {first, last},
+				"nil":        {nilFactory},
+				"valid-nil":  {first, nilFactory},
+				"nil-valid":  {nilFactory, last},
+				"first-last": {first, last},
 			}[order]
 			ch := &seamChannel{}
 			rt, err := actorx.NewRuntime(context.Background(), append(opts, actorx.WithChannel(ch))...)
@@ -48,12 +50,14 @@ func TestContextFactoryOptionValidationAndOverride(t *testing.T) {
 				if rt != nil || !errors.Is(err, actorx.ErrSetup) || ch.opened {
 					t.Fatal(rt, err, ch.opened)
 				}
+
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer rt.Close(context.Background())
+
 			if firstCalls != 0 || lastCalls != 0 {
 				t.Fatal("NewRuntime called factory")
 			}
@@ -72,11 +76,14 @@ func TestContextFactoryOptionValidationAndOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rt.Close(context.Background())
+
 	addr, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.Handle(func(c actorx.Context, _ contextQuery) (bool, error) {
-			_, extended := c.WithContext(context.Background()).(*capabilityContext)
-			return extended, nil
-		})}
+		return []actorx.Binding{
+			actorx.Handle(func(c actorx.Context, _ contextQuery) (bool, error) {
+				_, extended := c.WithContext(context.Background()).(*capabilityContext)
+				return extended, nil
+			}),
+		}
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -90,20 +97,29 @@ func TestContextFactoryRunsOnlyAfterValidBindingsAndAdmission(t *testing.T) {
 	calls := 0
 	ch := &factoryProbeChannel{LocalChannel: actorx.NewLocalChannel()}
 	var rt *actorx.Runtime
-	rt = coreRuntime(t, actorx.WithInstanceLimit(1), actorx.WithChannel(ch), actorx.WithContextFactory(func(actorx.Actor) (actorx.ContextWrapper, error) {
-		// Reenter Runtime admission: neither its mutex nor an actor lock is held.
-		if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding { t.Error("full Spawn read Bindings"); return nil })); !errors.Is(err, actorx.ErrFull) {
-			t.Error(err)
-		}
-		calls++
-		return identityContext, nil
-	}))
+	rt = coreRuntime(t,
+		actorx.WithInstanceLimit(1),
+		actorx.WithChannel(ch),
+		actorx.WithContextFactory(func(actorx.Actor) (actorx.ContextWrapper, error) {
+			// Reenter Runtime admission: neither its mutex nor an actor lock is held.
+			if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
+				t.Error("full Spawn read Bindings")
+				return nil
+			})); !errors.Is(err, actorx.ErrFull) {
+				t.Error(err)
+			}
+
+			calls++
+			return identityContext, nil
+		}),
+	)
 	valid := bindingsFunc(func() []actorx.Binding {
 		return []actorx.Binding{actorx.HandleMessage(func(actorx.Context, contextQuery) error { return nil })}
 	})
 	if _, err := actorx.Describe(valid.Bindings()); err != nil || calls != 0 {
 		t.Fatal("Describe called factory", calls, err)
 	}
+
 	for _, bad := range []actorx.Actor{
 		nil,
 		bindingsFunc(func() []actorx.Binding { return []actorx.Binding{{}} }),
@@ -113,9 +129,11 @@ func TestContextFactoryRunsOnlyAfterValidBindingsAndAdmission(t *testing.T) {
 			t.Fatal(addr, err)
 		}
 	}
+
 	if calls != 0 || ch.binds.Load() != 0 {
 		t.Fatal("factory or channel ran for invalid Bindings", calls, ch.binds.Load())
 	}
+
 	addr, err := rt.Spawn(valid)
 	if err != nil {
 		t.Fatal(err)
@@ -123,12 +141,16 @@ func TestContextFactoryRunsOnlyAfterValidBindingsAndAdmission(t *testing.T) {
 	if calls != 1 || ch.binds.Load() != 1 {
 		t.Fatal(calls, ch.binds.Load())
 	}
-	if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding { t.Error("full Spawn read Bindings"); return nil })); !errors.Is(err, actorx.ErrFull) {
+	if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
+		t.Error("full Spawn read Bindings")
+		return nil
+	})); !errors.Is(err, actorx.ErrFull) {
 		t.Fatal(err)
 	}
 	if calls != 1 {
 		t.Fatal("full Spawn called factory", calls)
 	}
+
 	_ = addr.Stop(nil)
 	if _, err := addr.Wait(context.Background()); err != nil {
 		t.Fatal(err)
@@ -143,28 +165,45 @@ func TestContextFactoryFailureRollsBackBeforeChannelAndLifecycle(t *testing.T) {
 			var lifecycle atomic.Int32
 			value := bindingsFunc(func() []actorx.Binding {
 				return []actorx.Binding{
-					actorx.HandleMessage(func(actorx.Context, actorx.Started) error { lifecycle.Add(1); return nil }),
-					actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error { lifecycle.Add(1); return nil }),
-					actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error { lifecycle.Add(1); return nil }),
+					actorx.HandleMessage(func(actorx.Context, actorx.Started) error {
+						lifecycle.Add(1)
+						return nil
+					}),
+					actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error {
+						lifecycle.Add(1)
+						return nil
+					}),
+					actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error {
+						lifecycle.Add(1)
+						return nil
+					}),
 				}
 			})
 			calls := 0
-			rt := coreRuntime(t, actorx.WithInstanceLimit(1), actorx.WithChannel(ch), actorx.WithContextFactory(func(actorx.Actor) (actorx.ContextWrapper, error) {
-				calls++
-				if calls != 1 {
-					return identityContext, nil
-				}
-				switch mode {
-				case "error":
-					return nil, failure
-				case "panic":
-					panic("factory panic")
-				case "wrapper-and-error":
-					return func(c actorx.Context) actorx.Context { t.Error("failed factory wrapper ran"); return c }, failure
-				default:
-					return nil, nil
-				}
-			}))
+			rt := coreRuntime(t,
+				actorx.WithInstanceLimit(1),
+				actorx.WithChannel(ch),
+				actorx.WithContextFactory(func(actorx.Actor) (actorx.ContextWrapper, error) {
+					calls++
+					if calls != 1 {
+						return identityContext, nil
+					}
+
+					switch mode {
+					case "error":
+						return nil, failure
+					case "panic":
+						panic("factory panic")
+					case "wrapper-and-error":
+						return func(c actorx.Context) actorx.Context {
+							t.Error("failed factory wrapper ran")
+							return c
+						}, failure
+					default:
+						return nil, nil
+					}
+				}),
+			)
 			addr, err := rt.Spawn(value)
 			if !addr.IsZero() || !errors.Is(err, actorx.ErrSetup) {
 				t.Fatal(addr, err)
@@ -197,13 +236,20 @@ func TestContextFactoryBlockedDuringClose(t *testing.T) {
 	entered, unblock := make(chan struct{}), make(chan struct{})
 	release := sync.OnceFunc(func() { close(unblock) })
 	defer release()
+
 	var calls, wrappers, hooks atomic.Int32
-	rt := coreRuntime(t, actorx.WithInstanceLimit(1), actorx.WithContextFactory(func(actorx.Actor) (actorx.ContextWrapper, error) {
-		calls.Add(1)
-		close(entered)
-		<-unblock
-		return func(c actorx.Context) actorx.Context { wrappers.Add(1); return c }, nil
-	}))
+	rt := coreRuntime(t,
+		actorx.WithInstanceLimit(1),
+		actorx.WithContextFactory(func(actorx.Actor) (actorx.ContextWrapper, error) {
+			calls.Add(1)
+			close(entered)
+			<-unblock
+			return func(c actorx.Context) actorx.Context {
+				wrappers.Add(1)
+				return c
+			}, nil
+		}),
+	)
 	type result struct {
 		addr actorx.Addr
 		err  error
@@ -212,27 +258,46 @@ func TestContextFactoryBlockedDuringClose(t *testing.T) {
 	go func() {
 		addr, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
 			return []actorx.Binding{
-				actorx.HandleMessage(func(actorx.Context, actorx.Started) error { hooks.Add(1); return nil }),
-				actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error { hooks.Add(1); return nil }),
-				actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error { hooks.Add(1); return nil }),
+				actorx.HandleMessage(func(actorx.Context, actorx.Started) error {
+					hooks.Add(1)
+					return nil
+				}),
+				actorx.HandleMessage(func(actorx.Context, actorx.Stopping) error {
+					hooks.Add(1)
+					return nil
+				}),
+				actorx.HandleMessage(func(actorx.Context, actorx.Stopped) error {
+					hooks.Add(1)
+					return nil
+				}),
 			}
 		}))
 		finished <- result{addr, err}
 	}()
 	waitFor(t, entered)
-	if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding { t.Error("blocked factory released its instance slot"); return nil })); !errors.Is(err, actorx.ErrFull) {
+
+	// The blocked factory still owns its instance slot, and Close must join it.
+	if _, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
+		t.Error("blocked factory released its instance slot")
+		return nil
+	})); !errors.Is(err, actorx.ErrFull) {
 		t.Fatal(err)
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
+
 	if err := rt.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("Close did not join factory", err)
 	}
+
 	select {
 	case got := <-finished:
 		t.Fatal("Spawn ended before factory returned", got)
 	default:
 	}
+
+	// Close has timed out; let construction return and observe complete rollback.
 	release()
 	select {
 	case got := <-finished:
@@ -242,6 +307,7 @@ func TestContextFactoryBlockedDuringClose(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Spawn did not roll back after factory returned")
 	}
+
 	if err := rt.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -257,6 +323,7 @@ type familyContext struct {
 }
 
 type familyProbe struct{ id int } // Immutable factory input, independent of business state.
+
 type familyQuery struct {
 	remaining int
 	token     *int
@@ -276,6 +343,7 @@ func (a *familyProbe) check(c actorx.Context) error {
 	if !ok || ext.instance != a {
 		return errors.New("child inherited another instance's wrapper")
 	}
+
 	for range 2 {
 		c = c.WithContext(context.Background())
 		derived, ok := c.(*familyContext)
@@ -283,6 +351,7 @@ func (a *familyProbe) check(c actorx.Context) error {
 			return errors.New("derived family environment changed")
 		}
 	}
+
 	return nil
 }
 
@@ -293,14 +362,17 @@ func (a *familyProbe) descend(c actorx.Context, q familyQuery) ([]int, error) {
 	if c.(*familyContext).runtimeToken != q.token {
 		return nil, errors.New("Runtime factory environment changed")
 	}
+
 	ids := []int{a.id}
 	if q.remaining == 0 {
 		return ids, nil
 	}
+
 	child, err := c.Spawn(&familyProbe{id: a.id + 1})
 	if err != nil {
 		return nil, err
 	}
+
 	defer child.Stop(nil)
 	more, callErr := child.Call[[]int](c, familyQuery{remaining: q.remaining - 1, token: q.token})
 	_ = child.Stop(nil)
@@ -318,6 +390,7 @@ func TestContextFactoryBindsChildrenAndGrandchildrenOnce(t *testing.T) {
 			if !ok {
 				return nil, errors.New("factory received wrong Actor")
 			}
+
 			mu.Lock()
 			bound[instance]++
 			mu.Unlock()
@@ -325,6 +398,7 @@ func TestContextFactoryBindsChildrenAndGrandchildrenOnce(t *testing.T) {
 				if _, alreadyWrapped := c.(*familyContext); alreadyWrapped {
 					t.Error("WithContext stacked an old wrapper")
 				}
+
 				c.State() // The wrapper may safely acquire the actor lock.
 				return &familyContext{Context: c, runtimeToken: token, instance: instance}
 			}, nil
@@ -334,6 +408,7 @@ func TestContextFactoryBindsChildrenAndGrandchildrenOnce(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		got, callErr := addr.Call[[]int](ctx, familyQuery{remaining: 2, token: token})
 		_ = addr.Stop(nil)
@@ -342,15 +417,18 @@ func TestContextFactoryBindsChildrenAndGrandchildrenOnce(t *testing.T) {
 		if callErr != nil || waitErr != nil || exit.Reason != nil || !reflect.DeepEqual(got, []int{10, 11, 12}) {
 			t.Fatal(got, callErr, waitErr, exit)
 		}
+
 		mu.Lock()
 		if len(bound) != 3 {
 			t.Error("wrong number of instance bindings", len(bound))
 		}
+
 		for instance, calls := range bound {
 			if calls != 1 {
 				t.Error("factory rebound on invocation or WithContext", instance.id, calls)
 			}
 		}
+
 		mu.Unlock()
 	}
 }

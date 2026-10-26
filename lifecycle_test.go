@@ -202,32 +202,35 @@ func TestCloseReportsBlockedActorAndPreservesCause(t *testing.T) {
 						close(entered)
 						<-release
 					}
-					return []Binding{HandleMessage(func(Context, Stopping) error {
-						if phase == "stopping" {
-							close(entered)
-							<-release
-						}
-						return nil
-					}), HandleMessage(func(ctx Context, _ get) error {
-						if phase == "handler" {
-							close(entered)
-							<-release
-						}
-						if phase == "workers" {
-							_, err := StartTask(ctx.WithContext(context.Background()),
-								func(context.Context) (int, error) {
-									close(entered)
-									<-release
-									return 0, nil
-								},
-								func(int, error) bool { return true },
-								nil,
-							)
-							return err
-						}
+					return []Binding{
+						HandleMessage(func(Context, Stopping) error {
+							if phase == "stopping" {
+								close(entered)
+								<-release
+							}
+							return nil
+						}),
+						HandleMessage(func(ctx Context, _ get) error {
+							if phase == "handler" {
+								close(entered)
+								<-release
+							}
+							if phase == "workers" {
+								_, err := StartTask(ctx.WithContext(context.Background()),
+									func(context.Context) (int, error) {
+										close(entered)
+										<-release
+										return 0, nil
+									},
+									func(int, error) bool { return true },
+									nil,
+								)
+								return err
+							}
 
-						return nil
-					})}
+							return nil
+						}),
+					}
 				}))
 				spawned <- a
 			}()
@@ -292,12 +295,14 @@ func TestStartedErrorIsReturnedOnceAfterSelfStop(t *testing.T) {
 	failure := errors.New("started failed once")
 	for _, stopFirst := range []bool{false, true} {
 		_, err := rt.Spawn(bindingsFunc(func() []Binding {
-			return []Binding{HandleMessage(func(ctx Context, _ Started) error {
-				if stopFirst {
-					ctx.Stop(nil)
-				}
-				return failure
-			})}
+			return []Binding{
+				HandleMessage(func(ctx Context, _ Started) error {
+					if stopFirst {
+						ctx.Stop(nil)
+					}
+					return failure
+				}),
+			}
 		}))
 		if !errors.Is(err, failure) || strings.Count(err.Error(), failure.Error()) != 1 {
 			t.Fatal(err)

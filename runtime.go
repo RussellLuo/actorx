@@ -105,7 +105,8 @@ func NewRuntime(ctx context.Context, options ...Option) (*Runtime, error) {
 		o(&c)
 	}
 
-	if c.mailbox < 1 || c.pending < 1 || c.calls < 1 || c.workers < 1 || c.streamItems < 1 || c.chunkBytes < 1 || c.instances < 0 {
+	if c.mailbox < 1 || c.pending < 1 || c.calls < 1 || c.workers < 1 ||
+		c.streamItems < 1 || c.chunkBytes < 1 || c.instances < 0 {
 		return nil, fmt.Errorf("%w: capacities must be positive and instance limit nonnegative", ErrSetup)
 	}
 	if channelutil.IsNil(c.channel) {
@@ -167,6 +168,8 @@ func (rt *Runtime) Spawn(value Actor) (Addr, error) {
 		if err := a.install(value.Bindings()); err != nil {
 			return err
 		}
+
+		// Bind per-instance context capabilities before publishing the receiver.
 		if rt.cfg.contextFactory != nil {
 			a.contextWrapper, err = rt.cfg.contextFactory(value)
 			if err != nil {
@@ -176,6 +179,7 @@ func (rt *Runtime) Spawn(value Actor) (Addr, error) {
 				return fmt.Errorf("%w: context factory returned nil wrapper", ErrSetup)
 			}
 		}
+
 		return nil
 	}()
 

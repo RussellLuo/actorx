@@ -23,12 +23,14 @@ func (p *limitProbe) Bindings() []actorx.Binding {
 	}
 	return []actorx.Binding{actorx.HandleMessage(p.start), actorx.HandleMessage(p.stop), actorx.Handle(p.child)}
 }
+
 func (p *limitProbe) start(actorx.Context, actorx.Started) error {
 	if p.fail {
 		return errors.New("start failed")
 	}
 	return nil
 }
+
 func (p *limitProbe) stop(actorx.Context, actorx.Stopped) error {
 	if p.stopped != nil {
 		close(p.stopped)
@@ -36,10 +38,12 @@ func (p *limitProbe) stop(actorx.Context, actorx.Stopped) error {
 	}
 	return nil
 }
+
 func (*limitProbe) child(ctx actorx.Context, _ limitQuery) (bool, error) {
 	_, err := ctx.Spawn(&limitProbe{})
 	return errors.Is(err, actorx.ErrFull), nil
 }
+
 func TestInstanceLimitHeldThroughStoppedAndRollback(t *testing.T) {
 	ctx := context.Background()
 	if rt, err := actorx.NewRuntime(ctx, actorx.WithInstanceLimit(-1)); rt != nil || !errors.Is(err, actorx.ErrSetup) {

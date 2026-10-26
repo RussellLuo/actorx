@@ -13,16 +13,19 @@ func TestDescribeAndSpawnShareValidation(t *testing.T) {
 	message := HandleMessage(func(Context, get) error { panic("invalid set executed") })
 	started := HandleMessage(func(Context, Started) error { panic("invalid set started") })
 	cases := map[string][]Binding{
-		"zero":                    {{}},
-		"zero after valid":        {message, {}},
-		"nil message handler":     {HandleMessage[get](nil)},
-		"nil request handler":     {Handle[get, int](nil)},
-		"nil deferred handler":    {HandleDeferred[get, int](nil)},
-		"nil stream handler":      {HandleStream[get, int](nil)},
-		"interface message":       {HandleMessage(func(Context, any) error { return nil })},
-		"duplicate message":       {message, message},
-		"duplicate across modes":  {message, HandleStream(func(Context, get, StreamReply[int]) error { return nil })},
-		"duplicate result types":  {Handle(func(Context, get) (int, error) { return 0, nil }), Handle(func(Context, get) (string, error) { return "", nil })},
+		"zero":                   {{}},
+		"zero after valid":       {message, {}},
+		"nil message handler":    {HandleMessage[get](nil)},
+		"nil request handler":    {Handle[get, int](nil)},
+		"nil deferred handler":   {HandleDeferred[get, int](nil)},
+		"nil stream handler":     {HandleStream[get, int](nil)},
+		"interface message":      {HandleMessage(func(Context, any) error { return nil })},
+		"duplicate message":      {message, message},
+		"duplicate across modes": {message, HandleStream(func(Context, get, StreamReply[int]) error { return nil })},
+		"duplicate result types": {
+			Handle(func(Context, get) (int, error) { return 0, nil }),
+			Handle(func(Context, get) (string, error) { return "", nil }),
+		},
 		"duplicate lifecycle":     {started, started},
 		"nil started handler":     {HandleMessage[Started](nil)},
 		"nil stopping handler":    {HandleMessage[Stopping](nil)},
@@ -40,6 +43,7 @@ func TestDescribeAndSpawnShareValidation(t *testing.T) {
 			if out, err := Describe(entries); out != nil || !errors.Is(err, ErrSetup) {
 				t.Fatal(out, err)
 			}
+
 			rt := runtimeFor(t)
 			if addr, err := rt.Spawn(bindingsFunc(func() []Binding { return entries })); !addr.IsZero() || !errors.Is(err, ErrSetup) {
 				t.Fatal(addr, err)
@@ -54,15 +58,25 @@ func TestDescribeEmptyAndLifecycleOnly(t *testing.T) {
 		nil,
 		{},
 		{
-			HandleMessage(func(Context, Started) error { calls++; return nil }),
-			HandleMessage(func(Context, Stopping) error { calls++; return nil }),
-			HandleMessage(func(Context, Stopped) error { calls++; return nil }),
+			HandleMessage(func(Context, Started) error {
+				calls++
+				return nil
+			}),
+			HandleMessage(func(Context, Stopping) error {
+				calls++
+				return nil
+			}),
+			HandleMessage(func(Context, Stopped) error {
+				calls++
+				return nil
+			}),
 		},
 	} {
 		out, err := Describe(entries)
 		if len(out) != 0 || err != nil || calls != 0 {
 			t.Fatal(out, err, calls)
 		}
+
 		rt := runtimeFor(t)
 		addr, err := rt.Spawn(bindingsFunc(func() []Binding { return entries }))
 		if err != nil {
@@ -75,6 +89,7 @@ func TestDescribeEmptyAndLifecycleOnly(t *testing.T) {
 			t.Fatal(exit, err)
 		}
 	}
+
 	if calls != 3 {
 		t.Fatal("lifecycle dispatch changed", calls)
 	}
@@ -89,8 +104,13 @@ func (a *describeReceiver) Bindings() []Binding {
 	return []Binding{HandleMessage(a.started), Handle(a.read), Handle(a.add)}
 }
 
-func (a *describeReceiver) started(Context, Started) error { a.n++; return nil }
+func (a *describeReceiver) started(Context, Started) error {
+	a.n++
+	return nil
+}
+
 func (a *describeReceiver) read(Context, get) (int, error) { return a.n, nil }
+
 func (a *describeReceiver) add(_ Context, msg add) (int, error) {
 	a.n += msg.N
 	return a.n, nil
@@ -103,15 +123,18 @@ func TestDescribeNilReceiverAndIndependentSnapshots(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(out, want) {
 		t.Fatal(out, err)
 	}
+
 	// A second call owns its own output. Neither mutation can change a Binding.
 	again, err := Describe(entries)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	out[0] = Message[string]()
 	if !reflect.DeepEqual(again, want) || entries[1].Descriptor() != want[0] {
 		t.Fatal("output aliases input or another snapshot")
 	}
+
 	entries[1] = Binding{}
 	if !reflect.DeepEqual(again, want) {
 		t.Fatal("input mutation changed descriptions")
@@ -125,18 +148,22 @@ func TestDescribeNilReceiverAndIndependentSnapshots(t *testing.T) {
 		if err != nil || !reflect.DeepEqual(live, want) {
 			t.Fatal("nil/live contract differs", live, err)
 		}
+
 		addr, err := rt.Spawn(value)
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		addresses = append(addresses, addr)
 	}
+
 	for i, addr := range addresses {
 		n := (i + 1) * 10
 		if got, err := addr.Call[int](context.Background(), add{N: 2}); err != nil || got != n+3 {
 			t.Fatal(got, err)
 		}
 	}
+
 	for i, addr := range addresses {
 		n := (i + 1) * 10
 		if got, err := addr.Call[int](context.Background(), get{}); err != nil || got != n+3 {
@@ -158,10 +185,12 @@ func TestDescribeDoesNotRetainReceiver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
+
 	for {
 		runtime.GC()
 		select {

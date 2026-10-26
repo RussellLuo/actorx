@@ -50,6 +50,7 @@ func (ch *LocalChannel) Bind(ctx context.Context, id string, receive Receiver) (
 	ch.mu.Lock()
 	opened, closed := ch.opened, ch.closed
 	ch.mu.Unlock()
+
 	if closed {
 		return nil, ErrClosed
 	}
@@ -80,6 +81,7 @@ func (ch *LocalChannel) Bind(ctx context.Context, id string, receive Receiver) (
 
 	ch.mu.Lock()
 	defer ch.mu.Unlock()
+
 	if ch.closed {
 		return nil, ErrClosed
 	}
@@ -91,6 +93,7 @@ func (ch *LocalChannel) Bind(ctx context.Context, id string, receive Receiver) (
 	}
 
 	ch.targets[id] = target
+
 	var once sync.Once
 	return func() error {
 		once.Do(func() {

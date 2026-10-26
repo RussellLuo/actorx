@@ -181,7 +181,8 @@ func validateBindings(bindings []Binding) error {
 
 	for _, b := range bindings {
 		if b.phase == noLifecyclePhase &&
-			b.descriptor.Validate(CallKind) != nil && b.descriptor.Validate(StreamKind) != nil {
+			b.descriptor.Validate(CallKind) != nil &&
+			b.descriptor.Validate(StreamKind) != nil {
 			return fmt.Errorf("%w: invalid invocation description", ErrSetup)
 		}
 		if b.invalid || b.descriptor.MessageType() == nil || b.invoke == nil || seen[b.descriptor.MessageType()] {

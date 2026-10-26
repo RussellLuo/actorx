@@ -28,24 +28,27 @@ func TestResourceCompletionPanicSharesReleaseWithLifecycle(t *testing.T) {
 	}
 	var adopted *os.File
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(Context, Stopping) error {
-			if adopted != nil {
-				release()
-			}
-			return nil
-		}), HandleMessage(func(ctx Context, _ get) error {
-			_, err := StartTask(ctx.WithContext(context.Background()),
-				func(context.Context) (*os.File, error) {
-					return file, nil
-				},
-				func(value *os.File, _ error) bool {
-					adopted = value
-					panic("after storing resource, before confirming transfer")
-				},
-				func(*os.File) { release() },
-			)
-			return err
-		})}
+		return []Binding{
+			HandleMessage(func(Context, Stopping) error {
+				if adopted != nil {
+					release()
+				}
+				return nil
+			}),
+			HandleMessage(func(ctx Context, _ get) error {
+				_, err := StartTask(ctx.WithContext(context.Background()),
+					func(context.Context) (*os.File, error) {
+						return file, nil
+					},
+					func(value *os.File, _ error) bool {
+						adopted = value
+						panic("after storing resource, before confirming transfer")
+					},
+					func(*os.File) { release() },
+				)
+				return err
+			}),
+		}
 	})
 
 	if err := a.addr().Send(context.Background(), get{}); err != nil {

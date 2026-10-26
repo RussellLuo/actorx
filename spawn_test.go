@@ -44,7 +44,10 @@ func TestSpawnFailureReturnsZeroAddress(t *testing.T) {
 						}
 						return failure
 					}),
-					HandleMessage(func(Context, Stopped) error { cleaned.Store(true); return nil }),
+					HandleMessage(func(Context, Stopped) error {
+						cleaned.Store(true)
+						return nil
+					}),
 				}
 			})
 			if stage == "nil" {
@@ -95,17 +98,21 @@ func TestContextSpawnStartupPublicationRace(t *testing.T) {
 			parentResult := make(chan spawnOutcome, 1)
 			go func() {
 				addr, err := rt.Spawn(bindingsFunc(func() []Binding {
-					return []Binding{HandleMessage(func(ctx Context, _ Started) error {
-						child, err := ctx.Spawn(bindingsFunc(func() []Binding {
-							return []Binding{HandleMessage(func(ctx Context, _ Started) error {
-								started <- ctx.actorContext().actor.addr()
-								<-release
-								return nil
-							})}
-						}))
-						childResult <- spawnOutcome{child, err}
-						return creatorFailure
-					})}
+					return []Binding{
+						HandleMessage(func(ctx Context, _ Started) error {
+							child, err := ctx.Spawn(bindingsFunc(func() []Binding {
+								return []Binding{
+									HandleMessage(func(ctx Context, _ Started) error {
+										started <- ctx.actorContext().actor.addr()
+										<-release
+										return nil
+									}),
+								}
+							}))
+							childResult <- spawnOutcome{child, err}
+							return creatorFailure
+						}),
+					}
 				}))
 				parentResult <- spawnOutcome{addr, err}
 			}()
@@ -176,10 +183,14 @@ func TestContextSpawnStartupAndAdmission(t *testing.T) {
 					worker, err = ctx.Spawn(bindingsFunc(func() []Binding {
 						return []Binding{
 							HandleMessage(func(ctx Context, _ Started) error {
-								_, err := StartTask(ctx, func(context.Context) (int, error) { return 7, nil }, func(int, error) bool {
-									completions.Add(1)
-									return true
-								}, nil)
+								_, err := StartTask(ctx,
+									func(context.Context) (int, error) { return 7, nil },
+									func(int, error) bool {
+										completions.Add(1)
+										return true
+									},
+									nil,
+								)
 								childContext <- ctx
 								<-release
 								return err
@@ -264,31 +275,37 @@ func TestContextSpawnFailurePropagationAndDegrade(t *testing.T) {
 				var parentCleanups atomic.Int32
 				go func() {
 					addr, err := rt.Spawn(bindingsFunc(func() []Binding {
-						return []Binding{HandleMessage(func(Context, Stopped) error { parentCleanups.Add(1); return nil }), HandleMessage(func(ctx Context, _ Started) error {
-							child, err := ctx.Spawn(bindingsFunc(func() []Binding {
-								return []Binding{
-									HandleMessage(func(ctx Context, _ Started) error {
-										early <- ctx.actorContext().actor.addr()
-										if panicStart {
-											panic(failure)
-										}
+						return []Binding{
+							HandleMessage(func(Context, Stopped) error {
+								parentCleanups.Add(1)
+								return nil
+							}),
+							HandleMessage(func(ctx Context, _ Started) error {
+								child, err := ctx.Spawn(bindingsFunc(func() []Binding {
+									return []Binding{
+										HandleMessage(func(ctx Context, _ Started) error {
+											early <- ctx.actorContext().actor.addr()
+											if panicStart {
+												panic(failure)
+											}
 
-										return failure
-									}),
-									HandleMessage(func(Context, Stopped) error {
-										close(cleaning)
-										<-release
-										return cleanupFailure
-									}),
+											return failure
+										}),
+										HandleMessage(func(Context, Stopped) error {
+											close(cleaning)
+											<-release
+											return cleanupFailure
+										}),
+									}
+								}))
+								childResult <- spawnOutcome{child, err}
+								if propagate {
+									return err
 								}
-							}))
-							childResult <- spawnOutcome{child, err}
-							if propagate {
-								return err
-							}
 
-							return nil
-						})}
+								return nil
+							}),
+						}
 					}))
 					parentResult <- spawnOutcome{addr, err}
 				}()
@@ -338,17 +355,19 @@ func TestContextSpawnTargetSurvivesCreatorFailure(t *testing.T) {
 	created := make(chan Addr, 1)
 	failure := errors.New("creator startup failed after acquiring dependency")
 	parent, err := rt.Spawn(bindingsFunc(func() []Binding {
-		return []Binding{HandleMessage(func(ctx Context, _ Started) error {
-			child, err := ctx.Spawn(bindingsFunc(func() []Binding {
-				return []Binding{Handle(func(Context, get) (int, error) { return 7, nil })}
-			}))
-			if err != nil {
-				return err
-			}
+		return []Binding{
+			HandleMessage(func(ctx Context, _ Started) error {
+				child, err := ctx.Spawn(bindingsFunc(func() []Binding {
+					return []Binding{Handle(func(Context, get) (int, error) { return 7, nil })}
+				}))
+				if err != nil {
+					return err
+				}
 
-			created <- child
-			return failure
-		})}
+				created <- child
+				return failure
+			}),
+		}
 	}))
 	if parent != (Addr{}) || !errors.Is(err, failure) {
 		t.Fatal(parent, err)
@@ -500,11 +519,15 @@ func TestContextSpawnValidationAndCompletion(t *testing.T) {
 					t.Error("invalid setup", addr, err)
 				}
 
-				_, err := StartTask(ctx, func(context.Context) (int, error) { return 1, nil }, func(int, error) bool {
-					addr, err := ctx.Spawn(bindingsFunc(func() []Binding { return []Binding{} }))
-					result <- spawnOutcome{addr, err}
-					return true
-				}, nil)
+				_, err := StartTask(ctx,
+					func(context.Context) (int, error) { return 1, nil },
+					func(int, error) bool {
+						addr, err := ctx.Spawn(bindingsFunc(func() []Binding { return []Binding{} }))
+						result <- spawnOutcome{addr, err}
+						return true
+					},
+					nil,
+				)
 				return err
 			}),
 			HandleMessage(func(ctx Context, _ Stopping) error {

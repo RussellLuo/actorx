@@ -101,6 +101,7 @@ func (r *request) finish(value any, err error) bool {
 		}
 
 		r.cancel()
+
 		// Settle the reply before removing the target record. Complete exit must not
 		// precede a local caller's result publication.
 		if r.mode != sendMode {
@@ -113,7 +114,8 @@ func (r *request) finish(value any, err error) bool {
 		r.owner.mu.Unlock()
 		r.watchMu.Unlock()
 	})
-	if won && r.mode == sendMode && err != nil && !errors.Is(err, ErrStopped) && !errors.Is(err, context.Canceled) {
+	if won && r.mode == sendMode && err != nil &&
+		!errors.Is(err, ErrStopped) && !errors.Is(err, context.Canceled) {
 		slog.Error("actor Send failed", "id", r.owner.id, "error", err)
 	}
 

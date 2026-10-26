@@ -284,8 +284,10 @@ func (a *actor) dispatch(next item) (err error) {
 			next.req.finish(nil, err)
 			a.stop(nil)
 		}
+
 		return err
 	}
+
 	return next.binding.invoke(handlerCtx, next.msg, next.req)
 }
 

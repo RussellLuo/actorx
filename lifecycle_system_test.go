@@ -11,40 +11,49 @@ func TestLifecycleStartedLeavesOneSlotForTask(t *testing.T) {
 	rt := runtimeFor(t, WithMailboxCapacity(1), WithPendingLimit(1), WithCallLimit(1), WithTaskLimit(1))
 	delivered := make(chan struct{})
 	a := spawnFor(t, rt, func() []Binding {
-		return []Binding{HandleMessage(func(ctx Context, _ Started) error {
-			_, err := StartTask(ctx, func(context.Context) (int, error) { return 7, nil },
-				func(v int, err error) bool {
-					if v != 7 || err != nil || ctx.State() != StateRunning {
-						t.Error("startup completion", v, err, ctx.State())
-					}
+		return []Binding{
+			HandleMessage(func(ctx Context, _ Started) error {
+				_, err := StartTask(ctx,
+					func(context.Context) (int, error) { return 7, nil },
+					func(v int, err error) bool {
+						if v != 7 || err != nil || ctx.State() != StateRunning {
+							t.Error("startup completion", v, err, ctx.State())
+						}
 
-					ctx.Stop(nil) // May exit before the Spawn caller resumes.
-					close(delivered)
-					return true
-				}, nil)
-			if err != nil {
-				return err
-			}
+						ctx.Stop(nil) // May exit before the Spawn caller resumes.
+						close(delivered)
+						return true
+					},
+					nil,
+				)
+				if err != nil {
+					return err
+				}
 
-			// Fill the sole mailbox slot before Started returns. The lifecycle
-			// notice must neither consume that slot nor run the completion early.
-			ctx.actorContext().actor.workers.Wait()
-			_, err = StartTask(ctx, func(context.Context) (int, error) {
-				t.Error("exhausted startup capacity still launched work")
-				return 0, nil
-			}, func(int, error) bool { return true }, nil)
-			if !errors.Is(err, ErrFull) {
-				t.Error("startup bypassed mailbox/I/O budget", err)
-			}
+				// Fill the sole mailbox slot before Started returns. The lifecycle
+				// notice must neither consume that slot nor run the completion early.
+				ctx.actorContext().actor.workers.Wait()
+				_, err = StartTask(ctx,
+					func(context.Context) (int, error) {
+						t.Error("exhausted startup capacity still launched work")
+						return 0, nil
+					},
+					func(int, error) bool { return true },
+					nil,
+				)
+				if !errors.Is(err, ErrFull) {
+					t.Error("startup bypassed mailbox/I/O budget", err)
+				}
 
-			select {
-			case <-delivered:
-				t.Error("completion ran before initialization finished")
-			default:
-			}
+				select {
+				case <-delivered:
+					t.Error("completion ran before initialization finished")
+				default:
+				}
 
-			return nil
-		})}
+				return nil
+			}),
+		}
 	})
 	await(t, delivered)
 	a.addr().Stop(nil)

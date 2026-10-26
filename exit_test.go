@@ -175,17 +175,21 @@ func TestAddrWaitStartupFailureWaitsForRollback(t *testing.T) {
 			return []Binding{
 				HandleMessage(func(ctx Context, _ Started) error {
 					early <- ctx.actorContext().actor
-					_, err := StartTask(ctx, func(context.Context) (int, error) {
-						<-workerRelease
-						return 7, nil
-					}, func(int, error) bool {
-						t.Error("adopted failed-start result")
-						return true
-					}, func(int) {
-						close(discarding)
-						<-discardRelease
-						panic("discard failed")
-					})
+					_, err := StartTask(ctx,
+						func(context.Context) (int, error) {
+							<-workerRelease
+							return 7, nil
+						},
+						func(int, error) bool {
+							t.Error("adopted failed-start result")
+							return true
+						},
+						func(int) {
+							close(discarding)
+							<-discardRelease
+							panic("discard failed")
+						},
+					)
 					return errors.Join(failure, err)
 				}),
 				HandleMessage(func(Context, Stopping) error {
@@ -334,17 +338,21 @@ func TestAddrWaitAfterStartupTaskExit(t *testing.T) {
 			a := spawnFor(t, rt, func() []Binding {
 				return []Binding{
 					HandleMessage(func(ctx Context, _ Started) error {
-						_, err := StartTask(ctx, func(context.Context) (int, error) {
-							<-workRelease
-							return 0, failure
-						}, func(_ int, err error) bool {
-							if panicCompletion {
-								panic(err)
-							}
+						_, err := StartTask(ctx,
+							func(context.Context) (int, error) {
+								<-workRelease
+								return 0, failure
+							},
+							func(_ int, err error) bool {
+								if panicCompletion {
+									panic(err)
+								}
 
-							ctx.Stop(err)
-							return true
-						}, nil)
+								ctx.Stop(err)
+								return true
+							},
+							nil,
+						)
 						return err
 					}),
 					// The application reports Ready separately from startup success.

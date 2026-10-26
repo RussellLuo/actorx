@@ -36,20 +36,22 @@ func Example_mailbox() {
 
 	type Job struct{ ID int }
 	addr, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.HandleMessage(func(ctx actorx.Context, msg Job) error {
-			if msg.ID == 1 {
-				close(entered)
-				// A controlled blocker makes mailbox occupancy observable. Real
-				// blocking work belongs in StartTask, as shown by profile.
-				select {
-				case <-release:
-				case <-ctx.Done():
-					return ctx.Err()
+		return []actorx.Binding{
+			actorx.HandleMessage(func(ctx actorx.Context, msg Job) error {
+				if msg.ID == 1 {
+					close(entered)
+					// A controlled blocker makes mailbox occupancy observable. Real
+					// blocking work belongs in StartTask, as shown by profile.
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
-			}
 
-			return nil
-		})}
+				return nil
+			}),
+		}
 	}))
 	checkLimitExample(err)
 	checkLimitExample(addr.Send(ctx, Job{ID: 1}))
@@ -72,27 +74,31 @@ func Example_stream() {
 	thirdWrite, thirdWritten := make(chan struct{}), make(chan struct{})
 	type Count struct{}
 	addr, err := rt.Spawn(bindingsFunc(func() []actorx.Binding {
-		return []actorx.Binding{actorx.HandleStream(func(ctx actorx.Context, _ Count, stream actorx.StreamReply[string]) error {
-			_, err := actorx.StartTask(ctx,
-				func(ctx context.Context) (struct{}, error) {
-					for _, text := range []string{"1", "2", "3"} {
-						if text == "3" {
-							close(thirdWrite)
+		return []actorx.Binding{
+			actorx.HandleStream(func(ctx actorx.Context, _ Count, stream actorx.StreamReply[string]) error {
+				_, err := actorx.StartTask(ctx,
+					func(ctx context.Context) (struct{}, error) {
+						for _, text := range []string{"1", "2", "3"} {
+							if text == "3" {
+								close(thirdWrite)
+							}
+							if err := stream.Write(ctx, text, len(text)); err != nil {
+								return struct{}{}, err
+							}
 						}
-						if err := stream.Write(ctx, text, len(text)); err != nil {
-							return struct{}{}, err
-						}
-					}
 
-					close(thirdWritten)
-					return struct{}{}, nil
-				},
-				func(_ struct{}, err error) bool {
-					stream.Complete(err)
-					return true
-				}, nil)
-			return err
-		})}
+						close(thirdWritten)
+						return struct{}{}, nil
+					},
+					func(_ struct{}, err error) bool {
+						stream.Complete(err)
+						return true
+					},
+					nil,
+				)
+				return err
+			}),
+		}
 	}))
 	checkLimitExample(err)
 	checkLimitExample(addr.Stream[string](ctx, Count{}, func(text string) error {
