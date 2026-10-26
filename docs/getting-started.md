@@ -1,6 +1,6 @@
 # Getting started
 
-English | [中文](getting-started.zh.md) · [Documentation](README.md)
+English | [中文](getting-started.zh.md)
 
 This complete counter connects the actor author's work with the caller's work. Requires Go 1.27+, with no external service needed.
 

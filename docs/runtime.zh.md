@@ -1,6 +1,6 @@
 # 运行语义参考
 
-[English](runtime.md) | 中文 · [文档目录](README.zh.md)
+[English](runtime.md) | 中文
 
 本页集中说明作者侧绑定、异步执行与调用侧通信语义。完整程序见[快速入门](getting-started.zh.md)，启动和退出见[生命周期](lifecycle.zh.md)。
 
@@ -188,6 +188,29 @@ func (c *Counter) Bindings() []actorx.Binding {
 手写与生成绑定使用相同 API，满足同一个 Actor 接口；同一类型只保留一份 Bindings。四类 handler 的选择见[绑定与调用](#绑定与调用)。
 
 Bindings 只构造条目，不执行 handler、读取状态或取得资源；为每个实例绑定自己的 receiver。支持静态描述时，还需遵守[nil receiver 约定](#静态读取消息描述)。完整手写示例见 [example_describe_test.go](../example_describe_test.go)。
+
+## Channel 扩展接口
+
+Channel 连接 Runtime 与 mailbox 投递、回复能力。Runtime 默认使用 `NewLocalChannel()`，通过 `WithChannel` 可提供其他实现；业务 handler 继续使用 Context 和 Addr。
+
+```go
+type Channel interface {
+    Open(context.Context) error
+    Bind(context.Context, string, Receiver) (release func() error, err error)
+    Deliver(context.Context, Delivery, Responder) error
+    Close() error
+}
+```
+
+Runtime 独占成功打开的 Channel。Open 失败须回滚自身工作，拒绝重复认领时不能影响已有拥有者。Bind 返回可重复调用的释放函数。启动回滚和关闭顺序见[生命周期](lifecycle.zh.md#关闭-runtime)。
+
+| 能力 | 契约 |
+| --- | --- |
+| `Delivery` | 携带具体实例 target、唯一 correlation ID、Kind 和 Message；`Validate` 检查投递信封，消息类型和调用模式另行校验。 |
+| `Receiver` | `Receive` 进入 mailbox，成功证明受理；`Bindings` 提供普通消息描述，不含 handler 或生命周期通知。 |
+| `Responder` | `Complete` 单次结算；`Write` 将 chunk 排入有界窗口，`WriteConsumed` 另等待消费。 |
+
+写入可能阻塞，应放在请求所属工作中，不能阻塞共享接收回调。核心继续负责串行执行、请求/任务完成和完整退出。完整接口说明见 [channel.go](../channel.go)。
 
 ## Context 扩展与迁移
 

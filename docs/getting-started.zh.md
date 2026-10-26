@@ -1,6 +1,6 @@
 # 快速入门
 
-[English](getting-started.md) | 中文 · [文档目录](README.zh.md)
+[English](getting-started.md) | 中文
 
 本页用一个完整计数器串起 Actor 作者侧与使用侧。需要 Go 1.27+，无需外部服务。
 

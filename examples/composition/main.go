@@ -1,4 +1,4 @@
-//go:generate go run ../../cmd/actorx-gen
+//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
 package main
 
 import (

@@ -1,6 +1,6 @@
 # 核心概念
 
-[English](concepts.md) | 中文 · [文档目录](README.zh.md)
+[English](concepts.md) | 中文
 
 Actorx 将有状态组件组织为 actor：普通 Go struct 保存状态，具名方法处理消息，调用方通过地址通信。先运行[快速入门](getting-started.zh.md)，再用本页理解各部分的关系。
 

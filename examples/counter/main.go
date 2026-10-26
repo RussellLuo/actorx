@@ -1,6 +1,6 @@
 // Counter demonstrates generated bindings for a local actor with multiple messages.
 //
-//go:generate go run ../../cmd/actorx-gen
+//go:generate go run github.com/RussellLuo/actorx/cmd/actorx-gen
 package main
 
 import (

@@ -1,6 +1,6 @@
 # 生命周期
 
-[English](lifecycle.md) | 中文 · [文档目录](README.zh.md)
+[English](lifecycle.md) | 中文
 
 作者通过 Started / Stopping / Stopped 管理实例资源，调用方通过 Stop / Wait 管理一个原始本地实例，通过 Runtime.Close 关闭整个运行时。可观察的完整程序见[生命周期示例](../examples/lifecycle/README.zh.md)。
 

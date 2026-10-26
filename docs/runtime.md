@@ -1,6 +1,6 @@
 # Runtime reference
 
-English | [中文](runtime.zh.md) · [Documentation](README.md)
+English | [中文](runtime.zh.md)
 
 This page covers author-side bindings and asynchronous execution, and caller-side communication. See [Getting started](getting-started.md) for a complete program and [Lifecycle](lifecycle.md) for startup and exit.
 
@@ -188,6 +188,29 @@ func (c *Counter) Bindings() []actorx.Binding {
 Handwritten and generated bindings use the same API and satisfy the same Actor interface. Keep one Bindings implementation per type. See [Bindings and calls](#bindings-and-calls) for the four handler shapes.
 
 Bindings only constructs entries without executing handlers, reading state, or acquiring resources. Bind each instance's own receiver. Static metadata reads also require the [nil-receiver contract](#reading-message-metadata). See [example_describe_test.go](../example_describe_test.go) for a complete handwritten example.
+
+## Channel extension interface
+
+Channel connects Runtime to mailbox delivery and replies. Runtime uses `NewLocalChannel()` by default; supply another implementation with `WithChannel`. Business handlers continue to use Context and Addr.
+
+```go
+type Channel interface {
+    Open(context.Context) error
+    Bind(context.Context, string, Receiver) (release func() error, err error)
+    Deliver(context.Context, Delivery, Responder) error
+    Close() error
+}
+```
+
+Runtime exclusively owns a successfully opened Channel. Open must roll back its own work on failure and leave an existing owner intact if a duplicate claim is rejected. Bind returns an idempotent release function. Startup rollback and shutdown ordering are covered in [Lifecycle](lifecycle.md#closing-runtime).
+
+| Capability | Contract |
+| --- | --- |
+| `Delivery` | Carries the concrete instance target, unique correlation ID, Kind and Message. `Validate` checks the envelope; message types and modes are checked separately. |
+| `Receiver` | `Receive` enters the mailbox; success proves admission. `Bindings` exposes ordinary message descriptors, without handlers or lifecycle notices. |
+| `Responder` | `Complete` settles once. `Write` queues a bounded chunk; `WriteConsumed` also waits for consumption. |
+
+Writes can block: use request-owned work rather than a shared receive callback. The core retains responsibility for serial execution, request/task completion and complete exit. Full interface details are in [channel.go](../channel.go).
 
 ## Context extensions and migration
 

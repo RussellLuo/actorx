@@ -1,6 +1,6 @@
 # Core concepts
 
-English | [中文](concepts.zh.md) · [Documentation](README.md)
+English | [中文](concepts.zh.md)
 
 Actorx organizes stateful components as actors: ordinary Go structs keep state, named methods handle messages, and callers communicate through addresses. Run [Getting started](getting-started.md) first, then use this page to understand the parts.
 

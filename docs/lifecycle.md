@@ -1,6 +1,6 @@
 # Lifecycle
 
-English | [中文](lifecycle.zh.md) · [Documentation](README.md)
+English | [中文](lifecycle.zh.md)
 
 Authors manage instance resources with Started / Stopping / Stopped. Callers manage original local instances with Stop / Wait, and close the whole runtime with Runtime.Close. The [lifecycle example](../examples/lifecycle/README.md) makes the sequence observable.
 
