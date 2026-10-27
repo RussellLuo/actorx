@@ -16,7 +16,6 @@ import (
 const (
 	streamItems = 4
 	streamBytes = 64 << 10
-	maxStreams  = 16
 )
 
 // Reserve the full window before starting work, including the active callback.
@@ -24,7 +23,7 @@ const (
 func (n *network) reserveStream() bool {
 	n.businessMu.Lock()
 	defer n.businessMu.Unlock()
-	if n.streams >= maxStreams {
+	if n.streams >= n.rt.limits.transport.Streams {
 		return false
 	}
 	n.streams++

@@ -45,6 +45,8 @@ Startup validates every declared Type's contract and waits for entry readiness. 
 
 ## Storage and permissions
 
+Configure per-process execution and network capacity with [WithExecutionLimits and WithTransportLimits](runtime.md#resource-configuration). Increasing local capacity does not resize the following buckets or account quotas.
+
 Runtime creates three KV buckets idempotently. Incompatible existing configuration fails without automatic repair. Types use 16 MiB with 64 KiB values; current ownership and exits each use 128 MiB with 16 KiB values. All use files, History=1, no TTL, DiscardNew and one replica. See the [Registry protocol](registry.md) for complete settings and conservative evidence rules. Any complete wire contract change requires a new Type. Stored type metadata does not establish that a Factory is online.
 
 Grant JetStream account/stream information, the required KV reads and conditional writes, sequence-bounded maintenance purge, shared Factory entries, dedicated controls and temporary inboxes separately. `actord.factory.<type-token>.<factory-token>.control.confirm` and `.control.stop` are distinct publish permissions. The receiver subscribes normally to `control.*`, without a queue group. Scope permissions to actual Type/token ranges. Send/Call/Stream callers publish to `actord.actor.<type-token>.<id-token>`; workers subscribe under their declared Types. Both publish replies and subscribe to their own `_INBOX.>`. Call/Stream cancellation uses the original business subject without additional subscriptions or control permissions.

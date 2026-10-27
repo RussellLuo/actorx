@@ -210,11 +210,11 @@ func (rt *Runtime) connect(ctx context.Context, opts nats.Options) error {
 		tokens:       map[string]string{},
 		diagnostics:  make(chan Diagnostic, 64),
 		reconnect:    make(chan struct{}, 1),
-		ordinary:     make(chan incoming, 32),
-		control:      make(chan incoming, 64),
+		ordinary:     make(chan incoming, rt.limits.payloads()),
+		control:      make(chan incoming, rt.limits.controls()),
 		stop:         make(chan struct{}),
 		codecSlots:   make(chan struct{}, 8),
-		payloadSlots: make(chan struct{}, 32),
+		payloadSlots: make(chan struct{}, rt.limits.payloads()),
 		leases:       map[string]*businessReply{},
 	}
 	rt.net = n

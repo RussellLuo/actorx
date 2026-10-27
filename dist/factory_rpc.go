@@ -20,7 +20,7 @@ type selection struct {
 }
 
 // Two lazy Runtime inbox subscriptions share reply and ordered credit routing.
-// At most 128 reply correlations; callbacks never execute user code.
+// Reply correlations share the Requests ceiling; callbacks never execute user code.
 func (n *network) reserveReply(ctx context.Context, id string) (string, chan *nats.Msg, error) {
 	n.rpcMu.Lock()
 	defer n.rpcMu.Unlock()
@@ -29,7 +29,7 @@ func (n *network) reserveReply(ctx context.Context, id string) (string, chan *na
 		n.replyHeld = map[string]bool{}
 		n.streamReplies = map[string]*receiveStream{}
 	}
-	if len(n.pending) >= 128 {
+	if len(n.pending) >= n.rt.limits.transport.Requests {
 		return "", nil, actorx.ErrFull
 	}
 
@@ -63,7 +63,8 @@ func (n *network) reserveReply(ctx context.Context, id string) (string, chan *na
 		if err != nil {
 			return "", nil, err
 		}
-		if err = sub.SetPendingLimits(8, 1<<20); err != nil {
+		frames := n.rt.limits.replyFrames()
+		if err = sub.SetPendingLimits(frames, frames*(128<<10)); err != nil {
 			_ = sub.Unsubscribe()
 			return "", nil, err
 		}
@@ -77,7 +78,7 @@ func (n *network) reserveReply(ctx context.Context, id string) (string, chan *na
 			_ = sub.Unsubscribe()
 			return "", nil, err
 		}
-		if err = control.SetPendingLimits(8, 1<<20); err == nil {
+		if err = control.SetPendingLimits(frames, frames*(128<<10)); err == nil {
 			err = n.nc.FlushWithContext(ctx)
 		}
 		if err != nil {

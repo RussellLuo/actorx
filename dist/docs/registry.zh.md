@@ -72,7 +72,7 @@ READY 证明同步 Started 及订阅就绪，不证明异步业务就绪。普�
 
 ## 容量及恢复边界
 
-新 claim 前读取 StreamInfo/AccountInfo，观测新鲜度≤1s。当前/终态桶或 account 字节使用≥70% 时拒绝新增激活；新类型在类型桶≥90% 时拒绝；用量不可读也不准入。确认 claim 前的容量拒绝返回 ErrFull 并保留有界存储原因；claim 可能已成功则同时保留 ErrActivationUnknown。每 Runtime 的64代及每代8次(16KiB+16KiB+1KiB)写入余量约16.5MiB，但各桶/account 可能先满。真实服务须测 payload、NATS header、subject、历史、标记、副本及文件开销；本地 token 不能原子预留全局空间。
+新 claim 前读取 StreamInfo/AccountInfo，观测新鲜度≤1s。当前/终态桶或 account 字节使用≥70% 时拒绝新增激活；新类型在类型桶≥90% 时拒绝；用量不可读也不准入。确认 claim 前的容量拒绝返回 ErrFull 并保留有界存储原因；claim 可能已成功则同时保留 ErrActivationUnknown。默认每 Runtime 的64代及每代8次(16KiB+16KiB+1KiB)写入余量约16.5MiB，但各桶/account 可能先满。真实服务须测 payload、NATS header、subject、历史、标记、副本及文件开销；本地 token 不能原子预留全局空间。
 
 新增被拒时保留控制/提交槽。桶/account 硬配额、磁盘故障或并发 Runtime 仍可能阻止最终写入。关闭受理、尽量完成实际清理，保留当前归属/PREPARED/FAILED_HELD 及原拥有者证据、继续跟踪提交；所需 COMMITTED 不齐时 Wait/Close 不成功。已提交 FAILED_HELD 可观察但未释放。不删未完成证据腾空间。
 

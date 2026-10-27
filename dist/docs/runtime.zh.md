@@ -31,7 +31,7 @@ Send/Call/Stream 都按同一顺序执行：**核对契约 → 选定并固定�
 
 所有返回路径都等待活动回调退出。取消或失败后不启动新回调，已观察的业务/协议错误不会被随后等待超时覆盖。阻塞回调继续占窗口、关联和 Runtime 工作预算，并阻止 Close 成功；网络取消仍可在回调阻塞期间传播。回调应及时返回，或用捕获的 context 自行响应取消，不在其中同步等待外层 Stream 或 Runtime.Close。
 
-每流窗口为4条/64 KiB编码 payload，包含活动回调；Runtime 入站/出站合计最多16流。消费完成才按真实编码长度归还额度；`Responder.WriteConsumed` 额外等待该消费确认。部分消费后失败不自动续传，断线取消既有入站流，重连不恢复；迟到帧不能恢复关联或再次触发消费。序号、窗口确认与累计预算详见 [wire 契约](contract.zh.md#统一信封)及[资源表](contract.zh.md#时间及开发资源配置)。
+每流窗口为4条/64 KiB编码 payload，包含活动回调；Runtime 入站/出站默认合计最多16流，可通过 TransportLimits.Streams 调整。消费完成才按真实编码长度归还额度；`Responder.WriteConsumed` 额外等待该消费确认。部分消费后失败不自动续传，断线取消既有入站流，重连不恢复；迟到帧不能恢复关联或再次触发消费。序号、窗口确认与累计预算详见 [wire 契约](contract.zh.md#统一信封)及[资源表](contract.zh.md#时间及开发资源配置)。
 
 长流用 `actorx.HandleStream` 的短 handler 启动 `actorx.StartTask(ctx, ...)`：worker 使用快照和任务 context 执行 I/O 或下游 Stream，通过 `reply.Write` 转交内容，串行完成回调调用 `reply.Complete(err)`。状态只在串行 handler/完成回调修改，同一 Actor 可继续处理普通 Notify。启动任务前取得 Addr/Self，worker 不保留分布式上下文视图。
 
@@ -44,6 +44,41 @@ Stream 使用上述五秒默认、六十秒最长总期限，长订阅须显式�
 wire 使用严格 JSON 子集，单个 payload/chunk 最多64 KiB。自定义 codec、执行能力、非法数值或不支持的形状会被拒绝；完整兼容表、深度/节点/分配限制统一见 [wire 参考](contract.zh.md#schema-子集与指纹)。
 
 本地容量不足返回 ErrFull。SDK 溢出只有异步诊断，不能证明某请求未执行；明确拒绝也依赖有效回复路径，满载时仍可能结果未知。`rt.Diagnostics()` 提供故障观察。网络工作与核心 handler/任务分别记账，只在实际结清时释放；完整上限见[资源表](contract.zh.md#时间及开发资源配置)。
+
+## 容量配置
+
+创建各个 worker 或调用方 Runtime 时设置容量，未填写的字段保留默认值：
+
+```go
+rt, err := dist.NewRuntime(ctx,
+    dist.WithActor(CounterSpec),
+    dist.WithExecutionLimits(dist.ExecutionLimits{
+        Instances:       256,
+        MailboxCapacity: 64,
+    }),
+    dist.WithTransportLimits(dist.TransportLimits{
+        Requests: 256,
+        Streams:  32,
+    }),
+)
+```
+
+| 字段 | 默认值 | 作用范围 |
+| --- | ---: | --- |
+| ExecutionLimits.Instances | 64 | 业务实例，包含本地子 Actor；也用于独立计数的分布式激活容量 |
+| ExecutionLimits.MailboxCapacity | 16 | 每个 Actor 的排队工作与任务完成预留槽 |
+| ExecutionLimits.Pending | 32 | 每个 Actor 已受理但未结清的请求，包含 Send 和 Deferred 请求 |
+| ExecutionLimits.Tasks | 4 | 每个 Actor 的异步任务，直到结果交接或丢弃完成 |
+| TransportLimits.Requests | 128 | 入站、出站分别计算的未结清网络请求；也用于业务核心调用方和共享回复关联容量 |
+| TransportLimits.Streams | 16 | 入站、出站合计的流数，包含活动消费回调 |
+
+工作从队列取出时释放 mailbox 容量，请求结清时才释放 Pending。Deferred handler 可以已经返回、mailbox 已空，但回复仍占 Pending。StartTask 同时占用任务槽并预留 mailbox 完成槽。
+
+Instances 用同一个值配置执行实例和激活容量，两处独立计数：创建失败或已退出但尚未释放的激活仍可占容量，本地子 Actor 则只占执行实例容量。Stream 也占请求额度；Send ACK 等待上限为 Requests 的一半、向上取整。激活及控制请求与业务请求共享回复关联。
+
+字段为零使用默认值，不表示无限制。负数或资源容量算术溢出在读取类型声明、连接网络前返回 actorx.ErrSetup。同组 Option 后者整体替换前者，再为零字段补默认值。配置在 Runtime 寿命内固定，不修改其他进程或服务端配额。
+
+Factory 配置和创建并发继续由内部管理。请求/回复缓冲与分派队列随网络容量配套增长；wire 窗口、payload 大小、分派 worker 数及 Registry I/O/存储仍有独立限制。配置是容量上限，不保证受理，其他预算也可能先返回 ErrFull。默认资源表及内部推导规则见 [wire 参考](contract.zh.md#时间及开发资源配置)；提高 Instances 时须检查存储余量。
 
 ## 错误分类
 

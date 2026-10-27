@@ -31,7 +31,7 @@ Disconnected business messages are neither buffered nor replayed. Applications h
 
 Every return path joins an active callback. Cancellation/failure starts no further callback, and an observed business/protocol error survives a later timeout during that join. Blocked callbacks retain their window, correlation and Runtime work reservation and prevent Close success; network cancellation can still propagate while they block. Callbacks should return promptly or use captured context for cancellation. Never synchronously wait for the enclosing Stream or Runtime.Close inside a callback.
 
-Each stream reserves four items/64 KiB encoded payload, including its active callback; a Runtime allows at most 16 incoming/outgoing streams combined. Credit returns only after consumption, using actual encoded bytes. `Responder.WriteConsumed` additionally waits for this acknowledgement. Partial failure never resumes automatically; disconnect cancels existing incoming streams and reconnect does not restore them. Late frames cannot recreate associations or consumers. See the [wire envelope](contract.md#unified-envelope) and [resource table](contract.md#time-and-development-resource-profile) for sequences, window acknowledgements and aggregate budgets.
+Each stream reserves four items/64 KiB encoded payload, including its active callback; a Runtime allows 16 incoming/outgoing streams combined by default (configurable with TransportLimits.Streams). Credit returns only after consumption, using actual encoded bytes. `Responder.WriteConsumed` additionally waits for this acknowledgement. Partial failure never resumes automatically; disconnect cancels existing incoming streams and reconnect does not restore them. Late frames cannot recreate associations or consumers. See the [wire envelope](contract.md#unified-envelope) and [resource table](contract.md#time-and-development-resource-profile) for sequences, window acknowledgements and aggregate budgets.
 
 For long streams, use a short `actorx.HandleStream` handler to start `actorx.StartTask(ctx, ...)`. The worker uses snapshots and its task context for I/O or downstream Stream, forwards chunks through `reply.Write`, and the serial completion calls `reply.Complete(err)`. State changes stay in serial handlers/completions, leaving the Actor able to handle ordinary Notify. Obtain Addr/Self before starting the task; workers do not retain distributed context views.
 
@@ -44,6 +44,41 @@ Callers and workers use shared DTOs at stable package paths. Named Go identities
 Wire values use a strict JSON subset with a 64 KiB limit per payload/chunk. Custom codecs, execution capabilities, invalid numbers and unsupported shapes fail. The [wire reference](contract.md#schema-subset-and-fingerprint) owns the complete compatibility table and depth/node/allocation limits.
 
 Local capacity failures return ErrFull. SDK overflow provides only asynchronous diagnostics, never evidence that a particular request did not execute. Explicit refusal also requires a valid reply path; saturated systems may still produce uncertainty. Observe faults through `rt.Diagnostics()`. Network work and core handlers/tasks have separate budgets, released only when actual work settles. See the [complete limits](contract.md#time-and-development-resource-profile).
+
+## Resource configuration
+
+Set limits when creating each worker or caller Runtime; omitted fields retain the defaults:
+
+```go
+rt, err := dist.NewRuntime(ctx,
+    dist.WithActor(CounterSpec),
+    dist.WithExecutionLimits(dist.ExecutionLimits{
+        Instances:       256,
+        MailboxCapacity: 64,
+    }),
+    dist.WithTransportLimits(dist.TransportLimits{
+        Requests: 256,
+        Streams:  32,
+    }),
+)
+```
+
+| Field | Default | Scope |
+| --- | ---: | --- |
+| ExecutionLimits.Instances | 64 | Business instances including local children; also the independently counted distributed activation budget |
+| ExecutionLimits.MailboxCapacity | 16 | Queued work plus reserved task completions per Actor |
+| ExecutionLimits.Pending | 32 | Admitted, unsettled requests per Actor, including Send and Deferred requests |
+| ExecutionLimits.Tasks | 4 | Tasks per Actor until result delivery or discard completes |
+| TransportLimits.Requests | 128 | Outgoing and incoming unsettled network requests, bounded separately; also core business caller and shared reply association capacity |
+| TransportLimits.Streams | 16 | Incoming and outgoing streams combined, including active callbacks |
+
+Mailbox capacity is released when work leaves the queue; Pending remains occupied until the request settles. A Deferred handler can return with an empty mailbox while its reply still occupies Pending. StartTask reserves a mailbox completion slot as well as a task slot.
+
+Instances configures both execution and activation capacity with one value. Each has its own accounting: failed or exited activations awaiting release can still occupy activation capacity, while local children occupy only execution capacity. Streams also use request capacity. Send ACK waits are capped at half Requests, rounded up; activation/control requests share reply associations with business requests.
+
+Zero selects the default, not unlimited capacity. Negative values or resource arithmetic overflow return actorx.ErrSetup before declarations are read or a connection is opened. The last option of the same group replaces the whole group, then zero fields receive defaults. Configuration is fixed for the Runtime lifetime and does not change peers or server quotas.
+
+Factory settings and creation concurrency stay internal. Request/reply buffers and dispatch queues grow with the configured transport limits; wire windows, payload sizes, dispatch worker counts and Registry I/O/storage limits stay independently bounded. These ceilings do not guarantee admission: another budget can return ErrFull first. See the [resource table](contract.md#time-and-development-resource-profile) for the default profile and derived capacities; increasing Instances requires checking storage headroom.
 
 ## Error classifications
 

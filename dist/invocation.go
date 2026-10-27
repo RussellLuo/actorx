@@ -123,7 +123,7 @@ func (n *network) invokeBusiness(
 	}
 
 	n.businessMu.Lock()
-	if n.outgoing >= 128 || kind == actorx.SendKind && n.acks >= 64 {
+	if n.outgoing >= n.rt.limits.transport.Requests || kind == actorx.SendKind && n.acks >= n.rt.limits.sendACKs() {
 		n.businessMu.Unlock()
 		return nil, actorx.ErrFull
 	}
@@ -547,7 +547,7 @@ func (n *network) handleBusiness(in incoming) {
 	}
 
 	n.businessMu.Lock()
-	if len(n.leases) >= 128 {
+	if len(n.leases) >= n.rt.limits.transport.Requests {
 		err = actorx.ErrFull
 	} else if n.leases[key] != nil {
 		err = ErrProtocol

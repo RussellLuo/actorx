@@ -65,7 +65,7 @@ func (f *factory) create(ctx actorx.Context, msg createRequest) (*creation, erro
 		rt.mu.Unlock()
 		return nil, actorx.ErrClosed
 	}
-	if len(rt.ledger) >= maxGenerations || rt.creating >= maxCreating || rt.perType[f.spec.name] >= maxFactoryCreating {
+	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= maxCreating || rt.perType[f.spec.name] >= maxFactoryCreating {
 		rt.mu.Unlock()
 		return nil, actorx.ErrFull
 	}

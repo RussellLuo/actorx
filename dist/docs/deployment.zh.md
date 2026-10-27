@@ -45,6 +45,8 @@ WithNATS 的空 URL 也采用默认地址；重复配置以最后一次的完整
 
 ## 存储与权限
 
+通过 [WithExecutionLimits 和 WithTransportLimits](runtime.zh.md#容量配置) 配置单进程执行和网络容量。提高本地容量不会扩容以下 KV 桶或账户配额。
+
 Runtime 幂等创建三个 KV 桶，已有配置不兼容则报错，不自动修正。类型桶为16MiB/值64KiB；当前归属与终态桶各128MiB/值16KiB。全部文件存储、History=1、无 TTL、DiscardNew、副本数1。完整配置和保守证据规则见 [Registry 协议](registry.zh.md)。改变完整 wire 契约须使用新 Type；类型规范存在不表示 Factory 在线。
 
 权限应分别授予：JetStream 账户/stream 信息、所需 KV 的读取与条件写入、受序号限制的维护 purge、Factory 共享入口、专属控制入口和临时 inbox。`actord.factory.<type-token>.<factory-token>.control.confirm` 与 `.control.stop` 是不同发布权限；接收方使用普通 `control.*` 订阅，不使用 queue group。严格部署需要结合实际 Type/token 范围授权。Send/Call/Stream 调用方需要发布到 `actord.actor.<type-token>.<id-token>`，工作进程需要订阅其声明 Type 下的业务入口，双方需要发布回复及订阅自己的 `_INBOX.>`。Call/Stream 取消使用原业务 subject，不增加订阅或额外控制权限。

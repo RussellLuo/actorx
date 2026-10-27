@@ -114,7 +114,7 @@ func (addr Addr) Wait(ctx context.Context) (exit actorx.Exit, waitErr error) {
 	// or retained history per handle. Canceled observers immediately return slots.
 	s.mu.Lock()
 	addr.rt.mu.Lock()
-	if addr.rt.closed || s.waiters >= 16 || addr.rt.resolvers >= 256 {
+	if addr.rt.closed || s.waiters >= 16 || addr.rt.resolvers >= addr.rt.limits.waiters() {
 		err := actorx.ErrFull
 		if addr.rt.closed {
 			err = actorx.ErrClosed

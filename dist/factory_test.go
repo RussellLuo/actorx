@@ -229,7 +229,7 @@ func TestGenerationBudgetAndLocalRelease(t *testing.T) {
 	}}))
 	var firstKey ActorKey
 	var firstGen string
-	for i := range maxGenerations {
+	for i := range rt.limits.execution.Instances {
 		key := ActorKey{"probe", fmt.Sprint(i)}
 		gen := token(t)
 		if i == 0 {
@@ -240,7 +240,7 @@ func TestGenerationBudgetAndLocalRelease(t *testing.T) {
 		}
 	}
 
-	if _, err := rt.createLocal(testContext(t), ActorKey{"probe", "overflow"}, token(t)); !errors.Is(err, actorx.ErrFull) || calls.Load() != maxGenerations {
+	if _, err := rt.createLocal(testContext(t), ActorKey{"probe", "overflow"}, token(t)); !errors.Is(err, actorx.ErrFull) || int(calls.Load()) != rt.limits.execution.Instances {
 		t.Fatal(err, calls.Load())
 	}
 
@@ -248,7 +248,7 @@ func TestGenerationBudgetAndLocalRelease(t *testing.T) {
 	if err := rt.releaseLocal(testContext(t), firstKey, firstGen); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.createLocal(testContext(t), firstKey, token(t)); !errors.Is(err, actorx.ErrSetup) || calls.Load() != maxGenerations+1 {
+	if _, err := rt.createLocal(testContext(t), firstKey, token(t)); !errors.Is(err, actorx.ErrSetup) || int(calls.Load()) != rt.limits.execution.Instances+1 {
 		t.Fatal(err, calls.Load())
 	}
 }

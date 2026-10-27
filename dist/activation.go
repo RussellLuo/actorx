@@ -92,7 +92,7 @@ func (f *factory) activate(ctx actorx.Context, msg activateRequest) (*creation, 
 	if rt.closed {
 		return nil, actorx.ErrClosed
 	}
-	if len(rt.ledger) >= maxGenerations || rt.creating >= maxCreating || rt.perType[f.spec.name] >= maxFactoryCreating {
+	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= maxCreating || rt.perType[f.spec.name] >= maxFactoryCreating {
 		return nil, actorx.ErrFull
 	}
 	gen, err := identity.NewOpaque()
@@ -678,7 +678,7 @@ func (addr Addr) resolve(ctx context.Context) (owned, error) {
 		s.mu.Unlock()
 		return owned{}, actorx.ErrClosed
 	}
-	if s.waiters >= 16 || addr.rt.resolvers >= 256 || s.resolving == nil && addr.rt.resolutionJobs >= 128 {
+	if s.waiters >= 16 || addr.rt.resolvers >= addr.rt.limits.waiters() || s.resolving == nil && addr.rt.resolutionJobs >= addr.rt.limits.transport.Requests {
 		addr.rt.mu.Unlock()
 		s.mu.Unlock()
 		return owned{}, actorx.ErrFull

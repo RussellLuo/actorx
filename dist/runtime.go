@@ -13,7 +13,6 @@ import (
 
 const (
 	maxTypes           = 8
-	maxGenerations     = 64
 	maxCreating        = 16
 	maxFactoryCreating = 4
 )
@@ -22,9 +21,11 @@ type runtimeOptions struct {
 	specs     []func() (registration, error)
 	nats      natsConfig
 	localTest bool
+	execution ExecutionLimits
+	transport TransportLimits
 }
 
-// Option configures the immutable set of worker types before initialization.
+// Option configures declarations, connection and resource limits before initialization.
 type Option func(*runtimeOptions)
 
 // Runtime owns local execution, NATS subscriptions and a JetStream Registry.
@@ -35,6 +36,7 @@ type Runtime struct {
 	closed      bool
 	life        context.Context
 	cancel      context.CancelFunc
+	limits      runtimeLimits
 
 	business, management *actorx.Runtime
 	execution            *actorx.LocalChannel
@@ -78,8 +80,13 @@ func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {
 	if len(cfg.specs) > maxTypes {
 		return nil, actorx.ErrSetup
 	}
+	limits, err := normalizeLimits(cfg.execution, cfg.transport)
+	if err != nil {
+		return nil, err
+	}
 	rt := &Runtime{
 		initialized: true,
+		limits:      limits,
 		specs:       map[string]registration{},
 		factories:   map[string]actorx.Addr{},
 		ledger:      map[string]*creation{},
@@ -110,12 +117,12 @@ func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {
 	rt.business, err = actorx.NewRuntime(initCtx,
 		actorx.WithChannel(rt.execution),
 		actorx.WithContextFactory(rt.contextFactory),
-		actorx.WithMailboxCapacity(16),
-		actorx.WithPendingLimit(32),
-		actorx.WithTaskLimit(4),
-		actorx.WithCallLimit(128),
+		actorx.WithMailboxCapacity(limits.execution.MailboxCapacity),
+		actorx.WithPendingLimit(limits.execution.Pending),
+		actorx.WithTaskLimit(limits.execution.Tasks),
+		actorx.WithCallLimit(limits.transport.Requests),
 		actorx.WithStreamLimits(8, 64<<10),
-		actorx.WithInstanceLimit(64),
+		actorx.WithInstanceLimit(limits.execution.Instances),
 	)
 	if err == nil && len(rt.specs) > 0 {
 		rt.management, err = actorx.NewRuntime(initCtx,

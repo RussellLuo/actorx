@@ -74,17 +74,21 @@ message 最多 512 UTF-8 字节；最多 4 个 source，每项 operation≤32、
 
 管理方持有创建寿命，构造/启动 30s 后请求取消；New/Started 不返回仍占原 token。KV/confirm 每批最多尝试 3 次，受调用/阶段总期限限制，20/40/80ms 有界退避。取得归属后的清理/提交每代保留一个 token，按 1、2、4…30s 间隔重试，每批最多 3 次 KV 操作，直到证据完整或显式恢复；最后等待者离开不终止管理，不每次重试新增 goroutine。Go 取消不能强制终止应用回调/构造函数。
 
-下表为当前固定的内部开发配置；公开 Option 不提供通用预算调节。
+下表列出默认开发配置。公开执行/网络参数及含义见[容量配置](runtime.zh.md#容量配置)，其他协议、存储及管理限制继续由内部管理。
+
+自定义配置中，记 I=Instances、R=Requests、S=Streams。执行实例与所属激活各自最多 I 个，每 Actor 的 mailbox/pending/tasks 使用配置值。业务核心调用关联、出站请求、入站关联、共享回复关联及解析工作分别最多 R 个；Send ACK 等待最多 ceil(R/2)，解析/Wait 等待者总计最多 max(256,2R)，每地址 state 仍最多16个。入站/出站流共享 S 个额度，窗口合计预留 S×4 项 / S×64 KiB。
+
+内部业务分派队列和保留 payload 各使用 max(32,ceil(R/4)) 个槽，控制队列使用 max(64,ceil(R/2)) 个槽。两个 Runtime inbox 订阅各允许 max(8,ceil(R/16),ceil(S/2)) 个待处理帧，每帧最多128 KiB。应用订阅合计最多 I+18 个，Factory 订阅及每实例 SDK 上限沿用下表。Registry 容量及 worker 数不自动增加；负数及槽/字节预算算术溢出在 I/O 前拒绝。
 
 | 资源及持有者 | 局部/Runtime 上界 | 取得→释放；满载 |
 | --- | --- | --- |
 | 类型声明/Factory | 8 Type，64 handler/Type，256 schema 定义/契约，64 KiB/契约；已知类型缓存 64 项/4 MiB | 启动/缓存槽→关闭或淘汰闲置缓存；声明 ErrSetup、缓存请求 ErrFull |
-| 业务引擎/核心 | 总共 64 个所属代，含构造、运行、FAILED、待提交；每实例 mailbox16、pending32、worker4；calls128；本地流 8×64 KiB 外加活动 chunk | 按实际归属预留，执行/清理结清才释放；复用核心 ErrFull |
+| 业务引擎/核心 | 64 个业务实例；另独立计数最多64个所属激活，含构造、运行、FAILED、待提交；每实例 mailbox16、pending32、worker4；calls128；本地流 8×64 KiB 外加活动 chunk | 按实际归属预留，执行/清理结清才释放；复用核心 ErrFull |
 | 管理引擎/核心 | 8 Factory，各 mailbox64、pending128、worker8；calls64；流 1×4 KiB 外加活动 chunk | 与业务引擎独立，保持到提交结清；工作开始前 ErrFull |
 | Runtime 激活账本 | 同时创建 16，每 Factory 4；属于 64 代预算子集 | CAS/New 前预留→提交/接管或完整回滚；FAILED 保留代槽，claim 前 ErrFull |
 | 解析等待者/Addr 与 Runtime | 每 state16，总计256 | 加入解析前→自己的取消/结果；工作不随等待者结束；ErrFull |
 | 本地子实例/业务引擎 | 与逻辑实例共享 64 个在用实例槽，与持久代槽分开 | 普通本地 Spawn 的 Bind 前预留→核心完整退出；使用已有 Channel 接缝，不能成为无界旁路 |
-| 网络关联/Runtime | 总128，Send ACK 子集≤64，入口分派/工作≤128 | 发布/分派前→网络结清且回调退出；有效识别时 ErrFull，不从 SDK 丢帧推定未执行 |
+| 网络关联/Runtime | 出站≤128，Send ACK 子集≤64；入站业务关联≤128；共享回复关联≤128 | 发布/分派前→网络结清且回调退出；有效识别时 ErrFull，不从 SDK 丢帧推定未执行 |
 | 应用订阅/Runtime | ≤82：共享8、专属8、业务64、inbox2；业务各 pending2 帧/256 KiB，其余各8 帧/1 MiB；累计272 帧/34 MiB | subscribe 前→退订并等待已进入回调；SDK 丢失为异步故障/可能结果未知 |
 | SDK Registry 请求/Runtime | 总并发8（普通≤6，控制/提交预留2）；强制 UseOldRequestStyle，临时订阅≤8，每个 channel8；≤64 帧/8 MiB | 显式 context 的 SDK 调用前→返回/退订；不进入应用关联表 |
 | 网络分派 | 业务队列32 帧/4 MiB、8 worker；控制/取消队列64 帧/8 MiB、4 worker | 复制帧入队前计费→分派返回；有效识别的满载 ErrFull，不按消息创建 goroutine |
@@ -95,17 +99,17 @@ message 最多 512 UTF-8 字节；最多 4 个 source，每项 operation≤32、
 | 提交/控制任务/Runtime | 使用已有64 代条目，每代最多1 工作，保留管理/控制队列及2 个 SDK 槽 | 清理开始→核实提交/释放，不因满载丢弃证据 |
 | 诊断/Runtime | 非阻塞64 事件，各≤1 KiB，溢出合并计数 | 回调→排空/关闭，不在 SDK 线程执行任意用户回调 |
 
-两个核心引擎合计最多 1536 mailbox 槽、3072 pending、320 worker、192 调用关联，再受较小网络/受理限制约束。应用代码保留的业务对象及 payload 引用不构成整个进程内存保证。SDK socket/parser、每个分派器在途帧及传输写缓冲另计：server max_payload=128 KiB，SDK 普通写缓冲32 KiB、重连缓冲禁用（该 SDK 用 -1；0 会恢复默认值）；decoder 无法撤销 SDK 已完成的分配。该配置以可信、按约配置的服务为前提。SDK 故障回调有界（含最多16条入站流的取消）、非阻塞，转交有界诊断；替换生命周期/错误控制的原始用户回调在 Option 规范化时拒绝。
+默认配置下，两个核心引擎合计最多 1536 mailbox 槽、3072 pending、320 worker、192 调用关联，再受较小网络/受理限制约束。应用代码保留的业务对象及 payload 引用不构成整个进程内存保证。SDK socket/parser、每个分派器在途帧及传输写缓冲另计：server max_payload=128 KiB，SDK 普通写缓冲32 KiB、重连缓冲禁用（该 SDK 用 -1；0 会恢复默认值）；decoder 无法撤销 SDK 已完成的分配。该配置以可信、按约配置的服务为前提。SDK 故障回调有界（含最多 Streams 条入站流的取消）、非阻塞，转交有界诊断；替换生命周期/错误控制的原始用户回调在 Option 规范化时拒绝。
 
-TestSizingBaseline 实测代表性最大帧/记录/错误样本并核对预算算术。64 代×每代8 次33 KiB 状态/终态/标记写入余量=16.5 MiB，低于每个128 MiB 桶30% 余量，仅是尺寸估算，不是全局空间预留。时间、CPU、真实记录开销、吞吐及多工作进程存储竞争须按部署校准，不把这些数值宣传为通用推荐。
+TestSizingBaseline 实测代表性最大帧/记录/错误样本并核对预算算术。默认64代×每代8次33 KiB 状态/终态/标记写入余量=16.5 MiB，低于每个128 MiB 桶30% 余量，仅是尺寸估算，不是全局空间预留。时间、CPU、真实记录开销、吞吐及多工作进程存储竞争须按部署校准，不把这些数值宣传为通用推荐。
 
 ## 回复与流控资源
 
-解析工作与等待者分开计费：Runtime 最多128份在途解析，全部等待者取消后仍保留至工作完成。每代生命周期监视及本地 Wait 等待工作各最多一份，总计各64份，随代账本结清退出。
+解析工作与等待者分开计费：Runtime 最多 Requests 份在途解析（默认128），全部等待者取消后仍保留至工作完成。每代生命周期监视及本地 Wait 等待工作各最多一份，总计各 Instances 份（默认64），随代账本结清退出。
 
-激活与 Send/Call 共用一个延迟建立的 Runtime inbox，最多128关联，单结果关联只容纳一帧；Call 取消向原业务 subject 发布，经控制队列匹配原回复能力与身份。第二个 Runtime inbox 按序接收 Stream 消费窗口（`_INBOX.<runtime>.control.<correlation>`），chunk 携带该控制能力，chunk/终止仍经第一个 inbox 回复。窗口不经过共享分派 worker，不按流新增订阅。
+激活与 Send/Call 共用一个延迟建立的 Runtime inbox，最多 Requests 个关联（默认128），单结果关联只容纳一帧；Call 取消向原业务 subject 发布，经控制队列匹配原回复能力与身份。第二个 Runtime inbox 按序接收 Stream 消费窗口（`_INBOX.<runtime>.control.<correlation>`），chunk 携带该控制能力，chunk/终止仍经第一个 inbox 回复。窗口不经过共享分派 worker，不按流新增订阅。
 
-Stream 使用预留的4条/64 KiB chunk 队列及单个终态/错误槽；最多16个网络监视工作，释放预算前结清。各缓冲及关联仍受上表累计限制。
+Stream 使用预留的4条/64 KiB chunk 队列及单个终态/错误槽；最多 Streams 个网络监视工作（默认16），释放预算前结清。各缓冲及关联仍受上表累计限制。
 
 
 ## 解码分配限制
