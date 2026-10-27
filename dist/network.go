@@ -165,6 +165,7 @@ type network struct {
 	stop        chan struct{}
 	wg          sync.WaitGroup
 	quiesceOnce sync.Once
+	contracts   *contractCache // Own lock; independent of stream/lease accounting.
 
 	// rpcMu protects inbox setup, reply routing and retained reply-buffer slots.
 	rpcMu          sync.Mutex
@@ -175,10 +176,9 @@ type network struct {
 	replyHeld      map[string]bool
 	streamReplies  map[string]*receiveStream
 
-	// businessMu protects stream/lease accounting and the immutable contract cache.
+	// businessMu protects stream/lease accounting.
 	streams        int
 	businessMu     sync.Mutex
-	contracts      map[string]wireContract
 	outgoing, acks int
 	leases         map[string]*businessReply
 
@@ -214,6 +214,7 @@ func (rt *Runtime) connect(ctx context.Context, opts nats.Options) error {
 		codecSlots:   make(chan struct{}, 8),
 		payloadSlots: make(chan struct{}, rt.limits.payloads()),
 		leases:       map[string]*businessReply{},
+		contracts:    newContractCache(rt.limits.transport.ContractCacheTypes),
 	}
 	rt.net = n
 
@@ -428,8 +429,9 @@ func (n *network) close() {
 		_ = n.streamControls.Unsubscribe()
 	}
 	n.rpcMu.Unlock()
+	// Runtime.Close has joined admitted work before releasing cached snapshots.
+	n.contracts.close()
 	n.businessMu.Lock()
-	n.contracts = nil
 	n.leases = nil
 	n.businessMu.Unlock()
 	if n.nc != nil {

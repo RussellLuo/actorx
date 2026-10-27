@@ -28,41 +28,22 @@ func typeIdentity(t reflect.Type) (string, error) {
 // Only immutable canonical bytes are cached. Caller validation uses its concrete
 // DTOs, never an Actor implementation or a list supplied by the application.
 func (n *network) typeContract(ctx context.Context, typ string) (wireContract, error) {
-	n.businessMu.Lock()
-	c, ok := n.contracts[typ]
-	full := len(n.contracts) >= 64
-	n.businessMu.Unlock()
-	if ok {
+	if c, ok := n.contracts.get(typ); ok {
 		return c, nil
-	}
-	if full {
-		return c, actorx.ErrFull
 	}
 	e, err := n.registry.get(ctx, typesBucket, "t."+identity.Token(typ), false)
 	if err != nil {
 		if errors.Is(err, nats.ErrKeyNotFound) {
-			return c, ErrTypeUnavailable
+			return wireContract{}, ErrTypeUnavailable
 		}
-		return c, err
+		return wireContract{}, err
 	}
-	if len(e.Value()) > 64<<10 {
-		return c, ErrContract
+	data := e.Value()
+	if len(data) > maxCachedContractBytes {
+		return wireContract{}, ErrContract
 	}
-	sum := sha256.Sum256(e.Value())
-	c = wireContract{e.Value(), hex.EncodeToString(sum[:])}
-	n.businessMu.Lock()
-	defer n.businessMu.Unlock()
-	if n.contracts == nil {
-		n.contracts = map[string]wireContract{}
-	}
-	if existing, ok := n.contracts[typ]; ok {
-		return existing, nil
-	}
-	if len(n.contracts) >= 64 {
-		return wireContract{}, actorx.ErrFull
-	}
-	n.contracts[typ] = c
-	return c, nil
+	sum := sha256.Sum256(data)
+	return n.contracts.put(typ, wireContract{data, hex.EncodeToString(sum[:])})
 }
 
 func checkInvocation(c wireContract, msg any, kind actorx.Kind, result reflect.Type) (string, error) {

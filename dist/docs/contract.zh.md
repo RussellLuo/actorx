@@ -80,9 +80,12 @@ message 最多 512 UTF-8 字节；最多 4 个 source，每项 operation≤32、
 
 内部业务分派队列和保留 payload 各使用 max(32,ceil(R/4)) 个槽，控制队列使用 max(64,ceil(R/2)) 个槽。两个 Runtime inbox 订阅各允许 max(8,ceil(R/16),ceil(S/2)) 个待处理帧，每帧最多128 KiB。记 T 为本 Runtime 已注册 Type 数，C=Creating、K=CreatingPerType。应用订阅合计最多 I+2T+2 个。Factory 任务容量 W=max(8,min(C,K,I)+4)，mailbox=max(64,2W)、pending=max(128,2W)、调用关联=max(64,C)，额外任务槽保留控制/清理余量。Types 可选限制 T，默认不限制数量。Registry 容量及 worker 数不自动增加；负数及槽/字节预算算术溢出在 I/O 前拒绝。
 
+记 H=ContractCacheTypes（默认64）。调用方缓存最多保留 H 个 Type 索引和 H 份不同契约，单份≤64 KiB；指纹相同还须完整字节比较一致才能共享规范字节。因此驻留规范字节≤H×64 KiB（默认4 MiB，H=1024 时为64 MiB）。该上限不含 Type 字符串、map/list/对象开销、SDK 读取缓冲和在途快照，不是 Runtime 总内存限制或独立字节配额。条目按需增长，不按 H 预分配全部契约。miss 沿用请求/payload/codec 及 Registry I/O 预算，Registry 读取在缓存锁外执行；读取失败不缓存，冲突回填返回 ErrContract。
+
 | 资源及持有者 | 局部/Runtime 上界 | 取得→释放；满载 |
 | --- | --- | --- |
-| 类型声明/Factory | Types 可选限制本地声明数（默认不限），64 handler/Type，256 schema 定义/契约，64 KiB/契约；已知类型缓存 64 项/4 MiB | 注册/缓存槽→Unregister/Close 结清或淘汰闲置缓存；无效/重复注册 ErrSetup，Type 配额/缓存请求 ErrFull |
+| 类型声明/Factory | Types 可选限制本地声明数（默认不限），64 handler/Type，256 schema 定义/契约，64 KiB/契约 | 本地注册槽→Unregister/Close 结清，已发布契约保留；无效/重复注册 ErrSetup，Type 配额 ErrFull |
+| 调用方契约缓存/network | ContractCacheTypes 个 Type 索引（默认64），共享契约数≤Type 数，驻留规范字节≤H×64 KiB（默认4 MiB），不含开销和在途快照 | miss→LRU 淘汰或工作结清后的 Close；命中刷新顺序，满时淘汰一个 Type，最后缓存引用移除时回收共享字节；项数已满本身不返回 ErrFull |
 | 业务引擎/核心 | 64 个业务实例；另独立计数最多64个所属激活，含构造、运行、FAILED、待提交；每实例 mailbox16、pending32、worker4；calls128；本地流 8×64 KiB 外加活动 chunk | 按实际归属预留，执行/清理结清才释放；复用核心 ErrFull |
 | 管理引擎/核心 | T 个 Factory，mailbox/pending/tasks 按上文推导（默认每个 64/128/8）；calls=max(64,C)；流 1×4 KiB 外加活动 chunk | 与业务引擎独立，保持到提交结清；工作开始前 ErrFull |
 | Runtime 激活账本 | Creating 个并发创建（默认16），每 Type 最多 CreatingPerType 个（默认4）；属于 64 代预算子集 | CAS/New 前预留→提交/接管或完整回滚；FAILED 保留代槽，claim 前 ErrFull |
@@ -100,6 +103,8 @@ message 最多 512 UTF-8 字节；最多 4 个 source，每项 operation≤32、
 | 诊断/Runtime | 非阻塞64 事件，各≤1 KiB，溢出合并计数 | 回调→排空/关闭，不在 SDK 线程执行任意用户回调 |
 
 默认执行/网络配置、注册 T 个 Type 时，两个核心引擎合计最多 1024+64T mailbox 槽、2048+128T pending、256+8T worker、192 调用关联，再受较小网络/受理限制约束。应用代码保留的业务对象及 payload 引用不构成整个进程内存保证。SDK socket/parser、每个分派器在途帧及传输写缓冲另计：server max_payload=128 KiB，SDK 普通写缓冲32 KiB、重连缓冲禁用（该 SDK 用 -1；0 会恢复默认值）；decoder 无法撤销 SDK 已完成的分配。该配置以可信、按约配置的服务为前提。SDK 故障回调有界（含最多 Streams 条入站流的取消）、非阻塞，转交有界诊断；替换生命周期/错误控制的原始用户回调在 Option 规范化时拒绝。
+
+淘汰只释放缓存引用，在途调用继续持有不可变快照，无须固定 LRU 项；淘汰后重读可能与旧快照短暂并存。淘汰不删除 Registry 契约、不撤销注册、不停止 Actor、不改变代次。Close 等待已受理工作结清后清空缓存，并拒绝迟到回填。
 
 TestSizingBaseline 实测代表性最大帧/记录/错误样本并核对预算算术。默认64代×每代8次33 KiB 状态/终态/标记写入余量=16.5 MiB，低于每个128 MiB 桶30% 余量，仅是尺寸估算，不是全局空间预留。时间、CPU、真实记录开销、吞吐及多工作进程存储竞争须按部署校准，不把这些数值宣传为通用推荐。
 

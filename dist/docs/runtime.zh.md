@@ -83,8 +83,9 @@ rt, err := dist.NewRuntime(ctx,
         MailboxCapacity: 64,
     }),
     dist.WithTransportLimits(dist.TransportLimits{
-        Requests: 256,
-        Streams:  32,
+        Requests:           256,
+        Streams:            32,
+        ContractCacheTypes: 1024,
     }),
 )
 ```
@@ -100,10 +101,15 @@ rt, err := dist.NewRuntime(ctx,
 | ExecutionLimits.Tasks | 4 | 每个 Actor 的异步任务，直到结果交接或丢弃完成 |
 | TransportLimits.Requests | 128 | 入站、出站分别计算的未结清网络请求；也用于业务核心调用方和共享回复关联容量 |
 | TransportLimits.Streams | 16 | 入站、出站合计的流数，包含活动消费回调 |
+| TransportLimits.ContractCacheTypes | 64 | 本 Runtime 调用方契约缓存的逻辑 Type 索引项数；独立于本地注册容量 |
 
 工作从队列取出时释放 mailbox 容量，请求结清时才释放 Pending。Deferred handler 可以已经返回、mailbox 已空，但回复仍占 Pending。StartTask 同时占用任务槽并预留 mailbox 完成槽。
 
-注册 Type 不创建业务实例。Types 是可选的注册配额，不配置其他 Runtime，也不扩大调用方的 64 项契约缓存。Creating、CreatingPerType 限制创建/启动并发，不限制已运行实例数量，且同时受 Instances 约束；创建结果被接管或丢弃并完成清理后才归还并发槽。
+注册 Type 不创建业务实例。Types 是可选的注册配额，不配置其他 Runtime，也不改变 ContractCacheTypes。Creating、CreatingPerType 限制创建/启动并发，不限制已运行实例数量，且同时受 Instances 约束；创建结果被接管或丢弃并完成清理后才归还并发槽。
+
+ContractCacheTypes 限制 Type LRU 项数：命中刷新顺序，缓存满时淘汰最久未用的 Type，不因缓存项数已满返回 ErrFull。未缓存的 Type 仍须读取自身的 Registry 声明，淘汰后再访问也会重读；读取失败不缓存。指纹相同的 Type 在完整字节比较一致后共享不可变规范字节，冲突返回 ErrContract。共享仅限本 Runtime 的调用方缓存，注册声明和 Registry 记录仍按 Type 独立保留。淘汰不停止 Actor，不改变 Addr 代次或 Registry 记录。在途调用持有有效快照，无须固定缓存项；Close 等待已受理工作结清后清空缓存并拒绝迟到回填。
+
+缓存中的不同契约数不超过 ContractCacheTypes，单份最多 64 KiB，因此驻留规范字节最多为 `ContractCacheTypes × 64 KiB`：默认 4 MiB，配置 1024 项时为 64 MiB，共享后实际可更小。该上限不含 Type 字符串、map/list/对象开销、SDK 读取缓冲和在途快照，不代表 Runtime 总内存。容量不会按上限预分配，也不提供独立字节容量配置。零值采用默认 64 项，不表示无限或关闭缓存。
 
 Instances 用同一个值配置执行实例和激活容量，两处独立计数：创建失败或已退出但尚未释放的激活仍可占容量，本地子 Actor 则只占执行实例容量。Stream 也占请求额度；Send ACK 等待上限为 Requests 的一半、向上取整。激活及控制请求与业务请求共享回复关联。
 

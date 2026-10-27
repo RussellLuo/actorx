@@ -83,8 +83,9 @@ rt, err := dist.NewRuntime(ctx,
         MailboxCapacity: 64,
     }),
     dist.WithTransportLimits(dist.TransportLimits{
-        Requests: 256,
-        Streams:  32,
+        Requests:           256,
+        Streams:            32,
+        ContractCacheTypes: 1024,
     }),
 )
 ```
@@ -100,10 +101,15 @@ rt, err := dist.NewRuntime(ctx,
 | ExecutionLimits.Tasks | 4 | Tasks per Actor until result delivery or discard completes |
 | TransportLimits.Requests | 128 | Outgoing and incoming unsettled network requests, bounded separately; also core business caller and shared reply association capacity |
 | TransportLimits.Streams | 16 | Incoming and outgoing streams combined, including active callbacks |
+| TransportLimits.ContractCacheTypes | 64 | Logical Type entries in this Runtime's caller contract cache; independent of local registration capacity |
 
 Mailbox capacity is released when work leaves the queue; Pending remains occupied until the request settles. A Deferred handler can return with an empty mailbox while its reply still occupies Pending. StartTask reserves a mailbox completion slot as well as a task slot.
 
-Type registration does not construct business instances. Types is an optional registration quota; it does not configure other Runtimes or enlarge the caller's 64-entry contract cache. Creating and CreatingPerType bound creation/startup rather than running instances; both also obey Instances. Slots remain occupied until creation results are adopted or discarded with cleanup complete.
+Type registration does not construct business instances. Types is an optional registration quota; it does not configure other Runtimes or change ContractCacheTypes. Creating and CreatingPerType bound creation/startup rather than running instances; both also obey Instances. Slots remain occupied until creation results are adopted or discarded with cleanup complete.
+
+ContractCacheTypes bounds a Type LRU: hits refresh recency; a full cache evicts the oldest Type rather than returning ErrFull. Each uncached Type still reads its own Registry declaration, including after eviction; failed reads are not cached. Types with the same fingerprint share immutable canonical bytes only after full byte comparison; a conflict returns ErrContract. Sharing applies only within this Runtime's caller cache; registration declarations and Registry records remain independent per Type. Eviction neither stops Actors nor changes Addr generations or Registry records. In-flight calls keep valid snapshots without pinning cache entries; Close drains admitted work before clearing the cache and rejecting late fills.
+
+At most ContractCacheTypes distinct contracts remain cached, each at most 64 KiB. Resident canonical bytes therefore total at most `ContractCacheTypes × 64 KiB`: 4 MiB by default, or 64 MiB for 1024 Types, often less with sharing. This bound excludes Type strings, map/list/object overhead, SDK read buffers and in-flight snapshots; it is not a Runtime memory limit. Capacity does not preallocate that memory, and there is no separate byte-capacity setting. Zero selects 64 entries, not an unlimited or disabled cache.
 
 Instances configures both execution and activation capacity with one value. Each has its own accounting: failed or exited activations awaiting release can still occupy activation capacity, while local children occupy only execution capacity. Streams also use request capacity. Send ACK waits are capped at half Requests, rounded up; activation/control requests share reply associations with business requests.
 

@@ -34,8 +34,8 @@ type ExecutionLimits struct {
 	Tasks int
 }
 
-// TransportLimits bounds network work on one Runtime. Zero fields select
-// defaults; negative fields are invalid. Limits are ceilings, not reservations:
+// TransportLimits bounds network work and cached contracts on one Runtime.
+// Zero fields select defaults; negative fields are invalid. Limits are ceilings, not reservations:
 // other execution, buffer and storage budgets can reject work first.
 type TransportLimits struct {
 	// Requests bounds outgoing and incoming unsettled Send/Call/Stream requests
@@ -47,6 +47,11 @@ type TransportLimits struct {
 	// consumption callbacks. Each stream also uses request capacity.
 	// The default is 16; the wire window remains four items / 64 KiB per stream.
 	Streams int
+	// ContractCacheTypes bounds cached logical Type entries. The default is 64.
+	// Shared canonical contracts each occupy at most 64 KiB, so resident contract
+	// bytes are bounded by ContractCacheTypes * 64 KiB, excluding index/object
+	// overhead and in-flight snapshots. Capacity does not preallocate that memory.
+	ContractCacheTypes int
 }
 
 // WithExecutionLimits snapshots Actor capacity limits. The last declaration
@@ -81,6 +86,7 @@ func normalizeLimits(e ExecutionLimits, t TransportLimits) (runtimeLimits, error
 		{"Tasks", &e.Tasks, 4},
 		{"Requests", &t.Requests, 128},
 		{"Streams", &t.Streams, 16},
+		{"ContractCacheTypes", &t.ContractCacheTypes, 64},
 	}
 	for _, field := range fields {
 		if *field.value < 0 {
@@ -104,6 +110,7 @@ func normalizeLimits(e ExecutionLimits, t TransportLimits) (runtimeLimits, error
 		{e.Instances, 2, 128 << 10}, // business subscription pending bytes
 		{t.Requests, 2, 128 << 10},  // request queues and reply buffers
 		{t.Streams, streamItems, streamBytes},
+		{t.ContractCacheTypes, maxCachedContractBytes},
 	} {
 		product := 1
 		for _, factor := range factors {

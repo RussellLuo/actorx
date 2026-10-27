@@ -17,15 +17,15 @@ func TestLimitOptionsDefaultsAndReplacement(t *testing.T) {
 	e.Instances = -1 // The option owns a value snapshot.
 	rt := testRuntime(t,
 		WithExecutionLimits(ExecutionLimits{Pending: 7, Tasks: 8}), x,
-		WithTransportLimits(TransportLimits{Requests: 3, Streams: 1}),
+		WithTransportLimits(TransportLimits{Requests: 3, Streams: 1, ContractCacheTypes: 1024}),
 		WithTransportLimits(TransportLimits{Requests: 5}),
 	)
 	if rt.limits.execution != (ExecutionLimits{Types: 12, Creating: 20, CreatingPerType: 10, Instances: 2, MailboxCapacity: 3, Pending: 32, Tasks: 4}) ||
-		rt.limits.transport != (TransportLimits{Requests: 5, Streams: 16}) {
+		rt.limits.transport != (TransportLimits{Requests: 5, Streams: 16, ContractCacheTypes: 64}) {
 		t.Fatal(rt.limits)
 	}
 	defaults := testRuntime(t, WithExecutionLimits(ExecutionLimits{}), WithTransportLimits(TransportLimits{}))
-	if defaults.limits.execution != (ExecutionLimits{Creating: 16, CreatingPerType: 4, Instances: 64, MailboxCapacity: 16, Pending: 32, Tasks: 4}) || defaults.limits.transport != (TransportLimits{128, 16}) {
+	if defaults.limits.execution != (ExecutionLimits{Creating: 16, CreatingPerType: 4, Instances: 64, MailboxCapacity: 16, Pending: 32, Tasks: 4}) || defaults.limits.transport != (TransportLimits{Requests: 128, Streams: 16, ContractCacheTypes: 64}) {
 		t.Fatal(defaults.limits)
 	}
 }
@@ -33,30 +33,54 @@ func TestLimitOptionsDefaultsAndReplacement(t *testing.T) {
 func TestInvalidLimitsBeforeConnection(t *testing.T) {
 	maxInt := int(^uint(0) >> 1)
 	for name, option := range map[string]Option{
-		"Types":             WithExecutionLimits(ExecutionLimits{Types: -1}),
-		"Creating":          WithExecutionLimits(ExecutionLimits{Creating: -1}),
-		"CreatingPerType":   WithExecutionLimits(ExecutionLimits{CreatingPerType: -1}),
-		"Instances":         WithExecutionLimits(ExecutionLimits{Instances: -1}),
-		"MailboxCapacity":   WithExecutionLimits(ExecutionLimits{MailboxCapacity: -1}),
-		"Pending":           WithExecutionLimits(ExecutionLimits{Pending: -1}),
-		"Tasks":             WithExecutionLimits(ExecutionLimits{Tasks: -1}),
-		"Requests":          WithTransportLimits(TransportLimits{Requests: -1}),
-		"Streams":           WithTransportLimits(TransportLimits{Streams: -1}),
-		"instance overflow": WithExecutionLimits(ExecutionLimits{Instances: maxInt}),
-		"mailbox overflow":  WithExecutionLimits(ExecutionLimits{MailboxCapacity: maxInt}),
-		"pending overflow":  WithExecutionLimits(ExecutionLimits{Pending: maxInt}),
-		"task overflow":     WithExecutionLimits(ExecutionLimits{Tasks: maxInt}),
-		"request overflow":  WithTransportLimits(TransportLimits{Requests: maxInt}),
-		"stream overflow":   WithTransportLimits(TransportLimits{Streams: maxInt}),
-		"type overflow":     WithExecutionLimits(ExecutionLimits{Types: maxInt}),
-		"creating overflow": WithExecutionLimits(ExecutionLimits{Creating: maxInt}),
-		"per-type overflow": WithExecutionLimits(ExecutionLimits{CreatingPerType: maxInt}),
+		"Types":              WithExecutionLimits(ExecutionLimits{Types: -1}),
+		"Creating":           WithExecutionLimits(ExecutionLimits{Creating: -1}),
+		"CreatingPerType":    WithExecutionLimits(ExecutionLimits{CreatingPerType: -1}),
+		"Instances":          WithExecutionLimits(ExecutionLimits{Instances: -1}),
+		"MailboxCapacity":    WithExecutionLimits(ExecutionLimits{MailboxCapacity: -1}),
+		"Pending":            WithExecutionLimits(ExecutionLimits{Pending: -1}),
+		"Tasks":              WithExecutionLimits(ExecutionLimits{Tasks: -1}),
+		"Requests":           WithTransportLimits(TransportLimits{Requests: -1}),
+		"Streams":            WithTransportLimits(TransportLimits{Streams: -1}),
+		"ContractCacheTypes": WithTransportLimits(TransportLimits{ContractCacheTypes: -1}),
+		"cache overflow":     WithTransportLimits(TransportLimits{ContractCacheTypes: maxInt/maxCachedContractBytes + 1}),
+		"instance overflow":  WithExecutionLimits(ExecutionLimits{Instances: maxInt}),
+		"mailbox overflow":   WithExecutionLimits(ExecutionLimits{MailboxCapacity: maxInt}),
+		"pending overflow":   WithExecutionLimits(ExecutionLimits{Pending: maxInt}),
+		"task overflow":      WithExecutionLimits(ExecutionLimits{Tasks: maxInt}),
+		"request overflow":   WithTransportLimits(TransportLimits{Requests: maxInt}),
+		"stream overflow":    WithTransportLimits(TransportLimits{Streams: maxInt}),
+		"type overflow":      WithExecutionLimits(ExecutionLimits{Types: maxInt}),
+		"creating overflow":  WithExecutionLimits(ExecutionLimits{Creating: maxInt}),
+		"per-type overflow":  WithExecutionLimits(ExecutionLimits{CreatingPerType: maxInt}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			rt, err := NewRuntime(testContext(t), option, WithNATS("nats://127.0.0.1:1"))
 			if rt != nil || !errors.Is(err, actorx.ErrSetup) ||
 				!strings.Contains(err.Error(), strings.Fields(name)[0]) && !strings.Contains(name, "overflow") {
 				t.Fatal(rt, err)
+			}
+		})
+	}
+}
+
+func TestContractCacheLimits(t *testing.T) {
+	maxCapacity := int(^uint(0)>>1) / maxCachedContractBytes
+	for _, capacity := range []int{1, 1024, maxCapacity} {
+		t.Run(fmt.Sprint(capacity), func(t *testing.T) {
+			transport := TransportLimits{ContractCacheTypes: capacity}
+			option := WithTransportLimits(transport)
+			transport.ContractCacheTypes = -1
+			cfg := runtimeOptions{}
+			WithTransportLimits(TransportLimits{Requests: 1, Streams: 1})(&cfg)
+			option(&cfg)
+			limits, err := normalizeLimits(cfg.execution, cfg.transport)
+			if err != nil || limits.transport != (TransportLimits{Requests: 128, Streams: 16, ContractCacheTypes: capacity}) {
+				t.Fatal(limits, err)
+			}
+			cache := newContractCache(limits.transport.ContractCacheTypes)
+			if len(cache.types) != 0 || len(cache.pool) != 0 || cache.residentBytes != 0 {
+				t.Fatal("capacity must not reserve contract storage")
 			}
 		})
 	}
