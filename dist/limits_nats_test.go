@@ -1,7 +1,6 @@
 package dist
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -19,22 +18,96 @@ func TestConfiguredLimitsNATS(t *testing.T) {
 	if url == "" {
 		t.Skip("set ACTORX_NATS_URL to an isolated JetStream server")
 	}
-	newRuntime := func(t *testing.T, options ...Option) *Runtime {
+	newRuntime := func(t *testing.T, fixtures ...any) *Runtime {
 		t.Helper()
-		options = append(options, WithNATS(url))
-		rt, err := NewRuntime(testContext(t), options...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if err := rt.Close(ctx); err != nil {
-				t.Error(err)
-			}
-		})
-		return rt
+		return testRuntimeWithOptions(t, []Option{WithNATS(url)}, fixtures...)
 	}
+
+	t.Run("types above the previous fixed limit", func(t *testing.T) {
+		prefix := fmt.Sprintf("types-%x", time.Now().UnixNano())
+		var options []any
+		for i := range 12 {
+			options = append(options, counterRegistration(fmt.Sprintf("%s-%d", prefix, i)))
+		}
+		newRuntime(t, options...)
+		client := newRuntime(t)
+		for i := range 12 {
+			if _, err := mustAddr(t, client, fmt.Sprintf("%s-%d", prefix, i), "one").Call[int](testContext(t), read{}); err != nil {
+				t.Fatal("registered Type unavailable", i, err)
+			}
+		}
+	})
+
+	t.Run("configured activation creation budgets", func(t *testing.T) {
+		for _, limits := range []ExecutionLimits{
+			{Creating: 2, CreatingPerType: 1},
+			{Creating: 20, CreatingPerType: 12},
+		} {
+			t.Run(fmt.Sprintf("%d-%d", limits.Creating, limits.CreatingPerType), func(t *testing.T) {
+				entered := make(chan struct{}, limits.Creating)
+				gates := make(map[string]chan struct{}, limits.Creating)
+				for i := range limits.Creating {
+					gates[fmt.Sprint(i)] = make(chan struct{})
+				}
+				var once sync.Once
+				release := func() {
+					once.Do(func() {
+						for _, gate := range gates {
+							close(gate)
+						}
+					})
+				}
+				defer release()
+				prefix := fmt.Sprintf("creating-%x", time.Now().UnixNano())
+				options := []any{WithExecutionLimits(limits)}
+				for i := range 3 {
+					options = append(options, registerSpec(ActorSpec[*counter]{Type: fmt.Sprintf("%s-%d", prefix, i), New: func(key ActorKey) *counter {
+						if gate := gates[key.ID]; gate != nil {
+							entered <- struct{}{}
+							<-gate
+						}
+						return &counter{}
+					}}))
+				}
+				worker := newRuntime(t, options...)
+				var entries []*creation
+				activate := func(typ, id string) (*creation, error) {
+					return worker.factories[typ].Call[*creation](testContext(t), activateRequest{ActorKey{typ, id}})
+				}
+				for i := range limits.Creating {
+					typ := fmt.Sprintf("%s-%d", prefix, i/limits.CreatingPerType)
+					entry, err := activate(typ, fmt.Sprint(i))
+					if err != nil {
+						t.Fatal("activation refused below configured capacity", i, err)
+					}
+					entries = append(entries, entry)
+					await(t, entered)
+					if (i+1)%limits.CreatingPerType == 0 {
+						if _, err := activate(typ, "overflow"); !errors.Is(err, actorx.ErrFull) {
+							t.Fatal("per-Type activation bound", err)
+						}
+					}
+				}
+				typ := fmt.Sprintf("%s-2", prefix)
+				if _, err := activate(typ, "overflow"); !errors.Is(err, actorx.ErrFull) {
+					t.Fatal("global activation bound", err)
+				}
+				// Settle one activation at a time so this test isolates creation
+				// capacity from the independent Registry I/O concurrency budget.
+				for _, entry := range entries {
+					gates[entry.key.ID] <- struct{}{}
+					await(t, entry.done)
+					if entry.err != nil {
+						t.Fatal(entry.err)
+					}
+				}
+				client := newRuntime(t)
+				if _, err := mustAddr(t, client, typ, "after-startup").Call[int](testContext(t), read{}); err != nil {
+					t.Fatal("startup completion did not restore creation capacity", err)
+				}
+			})
+		}
+	})
 
 	t.Run("request admission and recovery", func(t *testing.T) {
 		for _, capacity := range []int{1, 129} {
@@ -42,7 +115,7 @@ func TestConfiguredLimitsNATS(t *testing.T) {
 				typ := fmt.Sprintf("limits-%x", time.Now().UnixNano())
 				replies := make(chan actorx.Reply[int], capacity)
 				newRuntime(t, WithExecutionLimits(ExecutionLimits{Pending: capacity}),
-					WithTransportLimits(TransportLimits{Requests: capacity}), WithActor(ActorSpec[*limitProbe]{
+					WithTransportLimits(TransportLimits{Requests: capacity}), registerSpec(ActorSpec[*limitProbe]{
 						Type: typ, New: func(ActorKey) *limitProbe { return &limitProbe{replies: replies} },
 					}))
 				client := newRuntime(t, WithTransportLimits(TransportLimits{Requests: capacity}))
@@ -89,7 +162,7 @@ func TestConfiguredLimitsNATS(t *testing.T) {
 		releaseConsumer := func() { cOnce.Do(func() { close(consumer) }) }
 		defer releaseProducer()
 		defer releaseConsumer()
-		newRuntime(t, WithTransportLimits(TransportLimits{Streams: 1}), WithActor(ActorSpec[*limitProbe]{
+		newRuntime(t, WithTransportLimits(TransportLimits{Streams: 1}), registerSpec(ActorSpec[*limitProbe]{
 			Type: typ, New: func(ActorKey) *limitProbe { return &limitProbe{unblock: producer} },
 		}))
 		client := newRuntime(t, WithTransportLimits(TransportLimits{Streams: 1}))
@@ -127,7 +200,7 @@ func TestConfiguredLimitsNATS(t *testing.T) {
 
 	t.Run("instances above the previous fixed limit", func(t *testing.T) {
 		typ := fmt.Sprintf("limits-%x", time.Now().UnixNano())
-		newRuntime(t, WithExecutionLimits(ExecutionLimits{Instances: 65}), counterOption(typ))
+		newRuntime(t, WithExecutionLimits(ExecutionLimits{Instances: 65}), counterRegistration(typ))
 		client := newRuntime(t)
 		for i := range 65 {
 			if _, err := mustAddr(t, client, typ, fmt.Sprint(i)).Call[int](testContext(t), read{}); err != nil {

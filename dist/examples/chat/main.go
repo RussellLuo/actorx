@@ -31,12 +31,7 @@ func run(url, role, id string, delay time.Duration) (result error) {
 		return errors.New("consume-delay must not be negative")
 	}
 	options := []dist.Option{dist.WithNATS(url)}
-	switch role {
-	case "worker":
-		options = append(options, dist.WithActor(AssistantSpec))
-	case "client":
-		// The client resolves logical addresses; it hosts no Actor types.
-	default:
+	if role != "worker" && role != "client" {
 		return fmt.Errorf("unknown role %q: want worker or client", role)
 	}
 
@@ -52,6 +47,12 @@ func run(url, role, id string, delay time.Duration) (result error) {
 		defer cancel()
 		result = errors.Join(result, rt.Close(ctx))
 	}()
+
+	if role == "worker" {
+		if _, err := dist.Register(stop, rt, AssistantSpec); err != nil {
+			return err
+		}
+	}
 
 	if role == "worker" {
 		log.Print("Assistant worker ready")

@@ -27,12 +27,7 @@ func main() {
 
 func run(url, role, id string) (result error) {
 	options := []dist.Option{dist.WithNATS(url)}
-	switch role {
-	case "worker":
-		options = append(options, dist.WithActor(CounterSpec))
-	case "client":
-		// The client resolves logical addresses; it hosts no Actor types.
-	default:
+	if role != "worker" && role != "client" {
 		return fmt.Errorf("unknown role %q: want worker or client", role)
 	}
 	rt, err := dist.NewRuntime(context.Background(), options...)
@@ -46,6 +41,12 @@ func run(url, role, id string) (result error) {
 		defer cancel()
 		result = errors.Join(result, rt.Close(ctx))
 	}()
+
+	if role == "worker" {
+		if _, err := dist.Register(context.Background(), rt, CounterSpec); err != nil {
+			return err
+		}
+	}
 
 	// Keep the worker available until interrupted, then let deferred Close join its Actors.
 	if role != "client" {

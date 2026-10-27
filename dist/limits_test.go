@@ -12,7 +12,7 @@ import (
 )
 
 func TestLimitOptionsDefaultsAndReplacement(t *testing.T) {
-	e := ExecutionLimits{Instances: 2, MailboxCapacity: 3}
+	e := ExecutionLimits{Types: 12, Creating: 20, CreatingPerType: 10, Instances: 2, MailboxCapacity: 3}
 	x := WithExecutionLimits(e)
 	e.Instances = -1 // The option owns a value snapshot.
 	rt := testRuntime(t,
@@ -20,19 +20,22 @@ func TestLimitOptionsDefaultsAndReplacement(t *testing.T) {
 		WithTransportLimits(TransportLimits{Requests: 3, Streams: 1}),
 		WithTransportLimits(TransportLimits{Requests: 5}),
 	)
-	if rt.limits.execution != (ExecutionLimits{Instances: 2, MailboxCapacity: 3, Pending: 32, Tasks: 4}) ||
+	if rt.limits.execution != (ExecutionLimits{Types: 12, Creating: 20, CreatingPerType: 10, Instances: 2, MailboxCapacity: 3, Pending: 32, Tasks: 4}) ||
 		rt.limits.transport != (TransportLimits{Requests: 5, Streams: 16}) {
 		t.Fatal(rt.limits)
 	}
 	defaults := testRuntime(t, WithExecutionLimits(ExecutionLimits{}), WithTransportLimits(TransportLimits{}))
-	if defaults.limits.execution != (ExecutionLimits{64, 16, 32, 4}) || defaults.limits.transport != (TransportLimits{128, 16}) {
+	if defaults.limits.execution != (ExecutionLimits{Creating: 16, CreatingPerType: 4, Instances: 64, MailboxCapacity: 16, Pending: 32, Tasks: 4}) || defaults.limits.transport != (TransportLimits{128, 16}) {
 		t.Fatal(defaults.limits)
 	}
 }
 
-func TestInvalidLimitsBeforeDeclarationsOrConnection(t *testing.T) {
+func TestInvalidLimitsBeforeConnection(t *testing.T) {
 	maxInt := int(^uint(0) >> 1)
 	for name, option := range map[string]Option{
+		"Types":             WithExecutionLimits(ExecutionLimits{Types: -1}),
+		"Creating":          WithExecutionLimits(ExecutionLimits{Creating: -1}),
+		"CreatingPerType":   WithExecutionLimits(ExecutionLimits{CreatingPerType: -1}),
 		"Instances":         WithExecutionLimits(ExecutionLimits{Instances: -1}),
 		"MailboxCapacity":   WithExecutionLimits(ExecutionLimits{MailboxCapacity: -1}),
 		"Pending":           WithExecutionLimits(ExecutionLimits{Pending: -1}),
@@ -45,15 +48,12 @@ func TestInvalidLimitsBeforeDeclarationsOrConnection(t *testing.T) {
 		"task overflow":     WithExecutionLimits(ExecutionLimits{Tasks: maxInt}),
 		"request overflow":  WithTransportLimits(TransportLimits{Requests: maxInt}),
 		"stream overflow":   WithTransportLimits(TransportLimits{Streams: maxInt}),
+		"type overflow":     WithExecutionLimits(ExecutionLimits{Types: maxInt}),
+		"creating overflow": WithExecutionLimits(ExecutionLimits{Creating: maxInt}),
+		"per-type overflow": WithExecutionLimits(ExecutionLimits{CreatingPerType: maxInt}),
 	} {
 		t.Run(name, func(t *testing.T) {
-			// A declaration would fail differently if it ran before validation.
-			rt, err := NewRuntime(testContext(t), option, func(cfg *runtimeOptions) {
-				cfg.specs = append(cfg.specs, func() (registration, error) {
-					t.Error("read declarations before validating limits")
-					return registration{}, errors.New("declaration executed")
-				})
-			})
+			rt, err := NewRuntime(testContext(t), option, WithNATS("nats://127.0.0.1:1"))
 			if rt != nil || !errors.Is(err, actorx.ErrSetup) ||
 				!strings.Contains(err.Error(), strings.Fields(name)[0]) && !strings.Contains(name, "overflow") {
 				t.Fatal(rt, err)
@@ -62,10 +62,37 @@ func TestInvalidLimitsBeforeDeclarationsOrConnection(t *testing.T) {
 	}
 }
 
+func TestConfiguredTypeCapacity(t *testing.T) {
+	for _, capacity := range []int{0, 1, 12} {
+		t.Run(fmt.Sprint(capacity), func(t *testing.T) {
+			count := capacity
+			if count == 0 {
+				count = 12 // Default registration is no longer capped at eight.
+			}
+			options := []any{WithExecutionLimits(ExecutionLimits{Types: capacity, Instances: 1})}
+			for i := range count {
+				options = append(options, counterRegistration(fmt.Sprintf("type%d", i)))
+			}
+			rt := testRuntime(t, options...)
+			if len(rt.factories) != count {
+				t.Fatal("missing Factories", len(rt.factories))
+			}
+			// Type registration does not consume business instance capacity.
+			mustCreate(t, rt, ActorKey{fmt.Sprintf("type%d", count-1), "one"}, token(t))
+		})
+	}
+
+	rt := testRuntime(t, WithExecutionLimits(ExecutionLimits{Types: 1}), counterRegistration("one"))
+	if _, err := Register(testContext(t), rt, ActorSpec[*counter]{Type: "two", New: func(ActorKey) *counter { return &counter{} }}); !errors.Is(err, actorx.ErrFull) {
+		t.Fatal(err)
+	}
+
+}
+
 func TestConfiguredInstanceCapacity(t *testing.T) {
 	for _, capacity := range []int{1, 65} {
 		t.Run(fmt.Sprint(capacity), func(t *testing.T) {
-			rt := testRuntime(t, WithExecutionLimits(ExecutionLimits{Instances: capacity}), counterOption("counter"))
+			rt := testRuntime(t, WithExecutionLimits(ExecutionLimits{Instances: capacity}), counterRegistration("counter"))
 			var first *creation
 			for i := range capacity {
 				entry := mustCreate(t, rt, ActorKey{"counter", fmt.Sprint(i)}, token(t))
@@ -88,7 +115,7 @@ func TestConfiguredInstanceCapacity(t *testing.T) {
 }
 
 func TestConfiguredInstanceCapacityRetainsFailedCreation(t *testing.T) {
-	rt := testRuntime(t, WithExecutionLimits(ExecutionLimits{Instances: 1}), WithActor(ActorSpec[*counter]{
+	rt := testRuntime(t, WithExecutionLimits(ExecutionLimits{Instances: 1}), registerSpec(ActorSpec[*counter]{
 		Type: "counter", New: func(ActorKey) *counter { return nil },
 	}))
 	key, gen := ActorKey{"counter", "failed"}, token(t)

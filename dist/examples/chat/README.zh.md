@@ -18,7 +18,7 @@ answer: Actors use messages to coordinate work.
 chunks: 6
 ```
 
-actors.go 定义 Ask、TextChunk、Assistant 和 AssistantSpec。worker 注册 `WithActor(AssistantSpec)`；client 不注册 Actor，通过 `Addr("chat.assistant", id)` 取得逻辑地址，用 `Stream` 逐段消费 TextChunk。两条 client 命令均显式传入 `-id assistant-42`，它也是默认值；修改该值可选择另一个逻辑 Assistant。client 角色仍链接共同程序中的 Actor 定义。
+actors.go 定义 Ask、TextChunk、Assistant 和 AssistantSpec。worker 注册 `dist.Register(ctx, rt, AssistantSpec)`；client 不注册 Actor，通过 `Addr("chat.assistant", id)` 取得逻辑地址，用 `Stream` 逐段消费 TextChunk。两条 client 命令均显式传入 `-id assistant-42`，它也是默认值；修改该值可选择另一个逻辑 Assistant。client 角色仍链接共同程序中的 Actor 定义。
 
 `StreamReply.Write` 可能等待慢速消费者，因此 handler 使用 `actorx.StartTask`：任务使用自己的 context 写入分片，串行完成回调调用 `Complete(err)`。client 收到一段就输出一段，仅在 Stream 成功结束后输出分片数量。
 

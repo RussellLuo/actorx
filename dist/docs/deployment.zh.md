@@ -35,13 +35,13 @@ accounts {
 ```go
 rt, err := dist.NewRuntime(ctx,
     dist.WithNATS("nats://127.0.0.1:4222", nats.UserInfo("dev", "change-me")),
-    // 通过 WithActor 声明工作类型；纯调用方省略。
+    // 创建成功后通过 dist.Register(ctx, rt, spec) 注册工作类型。
 )
 ```
 
 WithNATS 的空 URL 也采用默认地址；重复配置以最后一次的完整 URL/选项快照为准。拒绝非法 URL、nil SDK Option、用户替换生命周期/错误回调、自定义 dialer、NoEcho 和初连隐式重试。认证与 TLS 的 SDK 选项保留。Runtime 独占连接；初始化 context 默认最多10秒，仅约束初始化，成功后由 Close 管理寿命。
 
-启动会核对全部声明类型的契约并等待入口就绪；失败时回滚本次本地资源，已经发布的相容全局契约保留。纯调用方没有 Factory 订阅或写维护。初始化时序见[架构](architecture.zh.md#激活与业务路径)。
+Register 核对该 Type 的契约并等待入口就绪；失败时自动清理本次本地资源，已经发布的全局不可变契约保留。失败时可能同时返回句柄，可调用 Unregister 等待清理。纯调用方没有 Factory 订阅或写维护。初始化时序见[架构](architecture.zh.md#激活与业务路径)。
 
 ## 存储与权限
 

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md) · [Concepts](../../docs/concepts.md)
 
-actors.go defines Button, Counter, their messages and their Specs; main.go handles flags, Runtime lifetime and three process roles: button registers only `WithActor(ButtonSpec)`, counter registers only `WithActor(CounterSpec)`, and client registers no Actors. The default role is client.
+actors.go defines Button, Counter, their messages and their Specs; main.go handles flags, Runtime lifetime and three process roles: button registers only `dist.Register(ctx, rt, ButtonSpec)`, counter registers only `dist.Register(ctx, rt, CounterSpec)`, and client registers no Actors. The default role is client.
 
 Start the [development NATS server](../../README.md), then run from the dist directory in three separate terminals:
 

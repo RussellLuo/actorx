@@ -190,7 +190,7 @@ func TestContextViewsAndConcurrentGenerations(t *testing.T) {
 		completed <- done
 		return &contextProbe{key: key, reports: reports, completed: done}
 	}}
-	runtimes := []*Runtime{testRuntime(t, WithActor(spec)), testRuntime(t, WithActor(spec))}
+	runtimes := []*Runtime{testRuntime(t, registerSpec(spec)), testRuntime(t, registerSpec(spec))}
 	expected := map[*Runtime]map[string]ActorKey{}
 	var saved []actorx.Context
 	for _, rt := range runtimes {
@@ -288,7 +288,7 @@ func TestPureCoreAndManagementContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	owner := testRuntime(t, WithActor(ActorSpec[*contextProbe]{Type: "probe", New: func(key ActorKey) *contextProbe {
+	owner := testRuntime(t, registerSpec(ActorSpec[*contextProbe]{Type: "probe", New: func(key ActorKey) *contextProbe {
 		return &contextProbe{key: key}
 	}}))
 

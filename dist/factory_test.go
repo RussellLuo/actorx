@@ -53,7 +53,7 @@ func TestConstructionFailuresAndHeldGeneration(t *testing.T) {
 	}
 	for name, spec := range cases {
 		t.Run(name, func(t *testing.T) {
-			rt := testRuntime(t, WithActor(spec))
+			rt := testRuntime(t, registerSpec(spec))
 			key := ActorKey{"probe", "1"}
 			gen := token(t)
 			entry, err := rt.createLocal(testContext(t), key, gen)
@@ -87,7 +87,7 @@ func TestConstructionFailuresAndHeldGeneration(t *testing.T) {
 func TestCloseDuringNewAndCallerCancellation(t *testing.T) {
 	entered, unblock := make(chan struct{}), make(chan struct{})
 	var news, starts atomic.Int32
-	rt := testRuntime(t, WithActor(ActorSpec[*startupProbe]{Type: "probe", New: func(key ActorKey) *startupProbe {
+	rt := testRuntime(t, registerSpec(ActorSpec[*startupProbe]{Type: "probe", New: func(key ActorKey) *startupProbe {
 		if key != (ActorKey{"probe", "1"}) {
 			panic("wrong ActorKey")
 		}
@@ -143,7 +143,7 @@ func TestCloseDuringNewAndCallerCancellation(t *testing.T) {
 
 func TestCloseDuringStartedKeepsManagementAlive(t *testing.T) {
 	entered, unblock, stopped := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	rt := testRuntime(t, WithActor(ActorSpec[*startupProbe]{Type: "probe", New: func(ActorKey) *startupProbe {
+	rt := testRuntime(t, registerSpec(ActorSpec[*startupProbe]{Type: "probe", New: func(ActorKey) *startupProbe {
 		return &startupProbe{entered: entered, unblock: unblock, stopped: stopped}
 	}}))
 	result := make(chan error, 1)
@@ -174,7 +174,7 @@ func TestCloseDuringStartedKeepsManagementAlive(t *testing.T) {
 
 func TestFactoryFailureClosesAdmissionDuringStartup(t *testing.T) {
 	entered, unblock, stopped := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	rt := testRuntime(t, WithActor(ActorSpec[*startupProbe]{Type: "probe", New: func(ActorKey) *startupProbe {
+	rt := testRuntime(t, registerSpec(ActorSpec[*startupProbe]{Type: "probe", New: func(ActorKey) *startupProbe {
 		return &startupProbe{entered: entered, unblock: unblock, stopped: stopped}
 	}}))
 	result := make(chan error, 1)
@@ -223,7 +223,7 @@ func TestFactoryFailureClosesAdmissionDuringStartup(t *testing.T) {
 
 func TestGenerationBudgetAndLocalRelease(t *testing.T) {
 	var calls atomic.Int32
-	rt := testRuntime(t, WithActor(ActorSpec[*startupProbe]{Type: "probe", New: func(ActorKey) *startupProbe {
+	rt := testRuntime(t, registerSpec(ActorSpec[*startupProbe]{Type: "probe", New: func(ActorKey) *startupProbe {
 		calls.Add(1)
 		return nil
 	}}))
@@ -254,56 +254,63 @@ func TestGenerationBudgetAndLocalRelease(t *testing.T) {
 }
 
 func TestCreationBudgetsKeepManagementIndependent(t *testing.T) {
-	entered := make(chan struct{}, maxCreating)
-	unblock := make(chan struct{})
-	var unblockOnce sync.Once
-	release := func() { unblockOnce.Do(func() { close(unblock) }) }
-	defer release()
-	var options []Option
-	for i := range 5 {
-		options = append(options, WithActor(ActorSpec[*counter]{Type: fmt.Sprintf("probe%d", i), New: func(ActorKey) *counter {
-			entered <- struct{}{}
-			<-unblock
-			return &counter{}
-		}}))
-	}
-	options = append(options, func(cfg *runtimeOptions) { cfg.localTest = true })
-	rt, err := NewRuntime(testContext(t), options...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Close runs after the deferred unblock, including on test failure.
-	defer func() {
-		release()
-		_ = rt.Close(context.Background())
-	}()
-	ctx := testContext(t)
-	for typ := range 4 {
-		for id := range maxFactoryCreating {
-			_, err := rt.factories[fmt.Sprintf("probe%d", typ)].Call[*creation](ctx, createRequest{ActorKey{fmt.Sprintf("probe%d", typ), fmt.Sprint(id)}, token(t)})
+	for _, limits := range []ExecutionLimits{
+		{}, // Preserve the default 16 global / 4 per-Type bounds.
+		{Creating: 2, CreatingPerType: 1},
+		{Creating: 40, CreatingPerType: 32}, // Exceed both old bounds and internal task/mailbox defaults.
+		{Creating: 3, CreatingPerType: 8},   // Global capacity can be smaller than the per-Type ceiling.
+	} {
+		t.Run(fmt.Sprintf("%d-%d", limits.Creating, limits.CreatingPerType), func(t *testing.T) {
+			normalized, err := normalizeLimits(limits, TransportLimits{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			await(t, entered)
-		}
-	}
-
-	for _, typ := range []string{"probe0", "probe4"} {
-		if _, err := rt.factories[typ].Call[*creation](ctx, createRequest{ActorKey{typ, "overflow"}, token(t)}); !errors.Is(err, actorx.ErrFull) {
-			t.Fatal(err)
-		}
-	}
-	if rt.creating != maxCreating {
-		t.Fatal("global construction bound", rt.creating)
-	}
-
-	// No business Actor has started, but management remains able to reject
-	// requests. It has its own worker/mailbox/call budgets.
-	rt.beginClose()
-	release()
-	if err := rt.Close(ctx); err != nil {
-		t.Fatal(err)
+			global, perType := normalized.execution.Creating, normalized.execution.CreatingPerType
+			entered := make(chan struct{}, global)
+			unblock := make(chan struct{})
+			var unblockOnce sync.Once
+			release := func() { unblockOnce.Do(func() { close(unblock) }) }
+			defer release()
+			options := []any{WithExecutionLimits(limits)}
+			for i := range (global+perType-1)/perType + 1 {
+				options = append(options, registerSpec(ActorSpec[*counter]{Type: fmt.Sprintf("probe%d", i), New: func(ActorKey) *counter {
+					entered <- struct{}{}
+					<-unblock
+					return &counter{}
+				}}))
+			}
+			rt := testRuntime(t, options...)
+			ctx := testContext(t)
+			var entries []*creation
+			for i := range global {
+				typ := fmt.Sprintf("probe%d", i/perType)
+				entry, err := rt.factories[typ].Call[*creation](ctx, createRequest{ActorKey{typ, fmt.Sprint(i)}, token(t)})
+				if err != nil {
+					t.Fatal("creation rejected below configured capacity", i, err)
+				}
+				entries = append(entries, entry)
+				await(t, entered)
+				if (i+1)%perType == 0 {
+					if _, err := rt.factories[typ].Call[*creation](ctx, createRequest{ActorKey{typ, "overflow"}, token(t)}); !errors.Is(err, actorx.ErrFull) {
+						t.Fatal("per-Type creation bound", err)
+					}
+				}
+			}
+			// A different Type must still obey the Runtime-wide ceiling.
+			typ := fmt.Sprintf("probe%d", (global+perType-1)/perType)
+			if _, err := rt.factories[typ].Call[*creation](ctx, createRequest{ActorKey{typ, "overflow"}, token(t)}); !errors.Is(err, actorx.ErrFull) {
+				t.Fatal("global creation bound", err)
+			}
+			// No business Actor has started; management still rejects requests.
+			release()
+			for _, entry := range entries {
+				await(t, entry.done)
+				if entry.err != nil {
+					t.Fatal(entry.err)
+				}
+			}
+			mustCreate(t, rt, ActorKey{typ, "after-startup"}, token(t))
+		})
 	}
 }
 
@@ -314,7 +321,8 @@ func TestDiscardWaitsForCompleteSuccessfulInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := &creation{key: ActorKey{"probe", "1"}, generation: token(t), done: make(chan struct{})}
+	entry := &creation{registration: &Registration{}, key: ActorKey{"probe", "1"}, generation: token(t), done: make(chan struct{})}
+	entry.registration.work.Add(1)
 	rt.mu.Lock()
 	rt.ledger[entry.generation] = entry
 	rt.creating++

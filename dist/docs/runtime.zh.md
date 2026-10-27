@@ -4,6 +4,28 @@
 
 Send/Call/Stream 都按同一顺序执行：**核对契约 → 选定并固定代次 → 等待 READY → 经 NATS 投递**。目标通过 actorx mailbox 执行业务，同进程也走相同路径。地址模型见[核心概念](concepts.zh.md)。
 
+## 注册与撤销
+
+启动时和运行期间均使用同一接口：
+
+```go
+rt, err := dist.NewRuntime(ctx)
+// 检查 err，安排 Runtime.Close，再注册工作类型。
+registration, err := dist.Register(ctx, rt, CounterSpec)
+// 检查 err；成功后再开放应用入口。
+
+// 需要独立撤销这个 Runtime 提供的该份创建能力时：
+err = registration.Unregister(cleanupCtx)
+```
+
+NewRuntime 只初始化执行、连接和 Registry；Register 校验 ActorSpec、发布不可变契约、安装 Factory 及控制/激活订阅，Flush 完成后返回成功，不创建业务实例。完整 Type 集合可以在启动前确定，仍逐项调用 Register。注册采用默认五秒、显式最多六十秒的总期限；Runtime.Close 也会取消正在安装的注册。
+
+同一 Runtime 内重复注册或注册尚在撤销中的 Type 返回 ErrSetup；超过 Types 配额返回 ErrFull。不同 Runtime 可以注册相同且契约一致的 Type，共同承接激活。Register 安装失败后自动清理；可能同时返回非 nil 句柄和错误，可用该句柄的 Unregister 等待清理。已发布的不可变契约保留，读取确认后的重试不会改写它。
+
+Unregister 立即关闭该次注册的新激活入口，然后停止所属逻辑实例，等待在途构造、实际退出及所需终态提交，再移除控制通道并归还 Type 配额。不影响其他注册或其他 Runtime 的同 Type。当前采用停止所属实例的语义；若业务需要排空，先在应用入口完成排空，再撤销。Actor 显式创建的独立子对象仍由应用按其生命周期约定结束。
+
+Unregister 幂等；超时只结束这次等待，清理继续，可以再次等待。同名 Type 必须在旧注册结清后才能重新注册，新注册获得新 token；旧句柄无法撤销后继注册。旧 Addr 仍固定原代。Runtime.Close 会负责所有未结清的注册，不能用它代替单个 Type 的撤销。
+
 ## 完成、顺序与错误
 
 | 调用或观察 | 含义 |
@@ -51,8 +73,10 @@ wire 使用严格 JSON 子集，单个 payload/chunk 最多64 KiB。自定义 co
 
 ```go
 rt, err := dist.NewRuntime(ctx,
-    dist.WithActor(CounterSpec),
     dist.WithExecutionLimits(dist.ExecutionLimits{
+        Types:           1024,
+        Creating:        32,
+        CreatingPerType: 8,
         Instances:       256,
         MailboxCapacity: 64,
     }),
@@ -65,6 +89,9 @@ rt, err := dist.NewRuntime(ctx,
 
 | 字段 | 默认值 | 作用范围 |
 | --- | ---: | --- |
+| ExecutionLimits.Types | 不限 | 本 Runtime 注册的 Actor Type 数量；独立于业务实例容量及已知契约缓存 |
+| ExecutionLimits.Creating | 16 | 本 Runtime 同时进行的实例创建/启动数量 |
+| ExecutionLimits.CreatingPerType | 4 | 本 Runtime 每个 Type 同时进行的实例创建/启动数量 |
 | ExecutionLimits.Instances | 64 | 业务实例，包含本地子 Actor；也用于独立计数的分布式激活容量 |
 | ExecutionLimits.MailboxCapacity | 16 | 每个 Actor 的排队工作与任务完成预留槽 |
 | ExecutionLimits.Pending | 32 | 每个 Actor 已受理但未结清的请求，包含 Send 和 Deferred 请求 |
@@ -74,11 +101,13 @@ rt, err := dist.NewRuntime(ctx,
 
 工作从队列取出时释放 mailbox 容量，请求结清时才释放 Pending。Deferred handler 可以已经返回、mailbox 已空，但回复仍占 Pending。StartTask 同时占用任务槽并预留 mailbox 完成槽。
 
+注册 Type 不创建业务实例。Types 是可选的注册配额，不配置其他 Runtime，也不扩大调用方的 64 项契约缓存。Creating、CreatingPerType 限制创建/启动并发，不限制已运行实例数量，且同时受 Instances 约束；创建结果被接管或丢弃并完成清理后才归还并发槽。
+
 Instances 用同一个值配置执行实例和激活容量，两处独立计数：创建失败或已退出但尚未释放的激活仍可占容量，本地子 Actor 则只占执行实例容量。Stream 也占请求额度；Send ACK 等待上限为 Requests 的一半、向上取整。激活及控制请求与业务请求共享回复关联。
 
-字段为零使用默认值，不表示无限制。负数或资源容量算术溢出在读取类型声明、连接网络前返回 actorx.ErrSetup。同组 Option 后者整体替换前者，再为零字段补默认值。配置在 Runtime 寿命内固定，不修改其他进程或服务端配额。
+字段为零使用默认值：Types 默认不限制数量，其他字段均有有限默认值。负数或资源容量算术溢出在连接网络前返回 actorx.ErrSetup。同组 Option 后者整体替换前者，再为零字段补默认值。配置在 Runtime 寿命内固定，不修改其他进程或服务端配额。
 
-Factory 配置和创建并发继续由内部管理。请求/回复缓冲与分派队列随网络容量配套增长；wire 窗口、payload 大小、分派 worker 数及 Registry I/O/存储仍有独立限制。配置是容量上限，不保证受理，其他预算也可能先返回 ErrFull。默认资源表及内部推导规则见 [wire 参考](contract.zh.md#时间及开发资源配置)；提高 Instances 时须检查存储余量。
+Factory 实例容量跟随 Types；Factory 任务及完成队列容量随有效创建并发增长，独立于业务 Tasks，并保留控制/清理余量。请求/回复缓冲与分派队列随网络容量配套增长；wire 窗口、payload 大小、分派 worker 数及 Registry I/O/存储仍有独立限制。配置是容量上限，不保证受理，其他预算也可能先返回 ErrFull。默认资源表及内部推导规则见 [wire 参考](contract.zh.md#时间及开发资源配置)；提高 Instances 时须检查存储余量。
 
 ## 错误分类
 

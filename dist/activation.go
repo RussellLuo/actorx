@@ -89,10 +89,10 @@ func (f *factory) activate(ctx actorx.Context, msg activateRequest) (*creation, 
 	rt := f.rt
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.closed {
+	if rt.closed || f.registration.draining || !f.registration.ready {
 		return nil, actorx.ErrClosed
 	}
-	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= maxCreating || rt.perType[f.spec.name] >= maxFactoryCreating {
+	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= rt.limits.execution.Creating || rt.perType[f.spec.name] >= rt.limits.execution.CreatingPerType {
 		return nil, actorx.ErrFull
 	}
 	gen, err := identity.NewOpaque()
@@ -100,15 +100,17 @@ func (f *factory) activate(ctx actorx.Context, msg activateRequest) (*creation, 
 		return nil, err
 	}
 	e := &creation{
-		key:        msg.key,
-		generation: gen,
-		done:       make(chan struct{}),
-		activation: &activationWork{selected: make(chan struct{}), stop: make(chan struct{}), released: make(chan struct{})},
+		key:          msg.key,
+		registration: f.registration,
+		generation:   gen,
+		done:         make(chan struct{}),
+		activation:   &activationWork{selected: make(chan struct{}), stop: make(chan struct{}), released: make(chan struct{})},
 	}
 	rt.ledger[gen] = e
 	rt.creating++
 	rt.perType[f.spec.name]++
 	rt.work.Add(1)
+	f.registration.work.Add(1)
 	spec := f.spec
 
 	_, err = actorx.StartTask(ctx.WithContext(rt.life), func(context.Context) (actorx.Addr, error) {
@@ -124,12 +126,14 @@ func (f *factory) activate(ctx actorx.Context, msg activateRequest) (*creation, 
 		rt.creating--
 		rt.perType[f.spec.name]--
 		rt.work.Done()
+		f.registration.work.Done()
 		return nil, err
 	}
 	f.entries[msg.key] = e
 
 	// This bounded ledger monitor also survives a dead Factory completion mailbox.
 	rt.work.Add(1)
+	f.registration.work.Add(1)
 	go rt.net.monitorActivation(e)
 	return e, nil
 }
@@ -160,14 +164,14 @@ func (n *network) lookup(ctx context.Context, key ActorKey) (owned, error) {
 }
 
 func (n *network) confirmOwner(ctx context.Context, o owned) (owned, error) {
-	if o.value.Factory == n.tokens[o.value.Key.Type] {
+	if o.value.Factory == n.rt.registrationToken(o.value.Key.Type) {
 		return n.confirmCurrent(ctx, o.value.Key, o.value.Generation, o.value.Factory)
 	}
 	return n.factoryRequest(ctx, "confirm", o.value.Key, o.value.Generation, o.value.Factory, o.value.Fingerprint, nil)
 }
 
 func (n *network) confirmCurrent(ctx context.Context, key ActorKey, gen, factory string) (owned, error) {
-	if n.tokens[key.Type] != factory {
+	if n.rt.registrationToken(key.Type) != factory {
 		return owned{}, ErrActivationUnknown
 	}
 	var err error
@@ -209,7 +213,7 @@ func (n *network) choose(e *creation, spec registration) (owned, error) {
 		Operation:   newOperation(),
 		Key:         e.key,
 		Generation:  e.generation,
-		Factory:     n.tokens[e.key.Type],
+		Factory:     e.registration.token,
 		Fingerprint: spec.contract.fingerprint,
 		State:       "STARTING",
 	}
@@ -365,7 +369,7 @@ func (n *network) transition(ctx context.Context, e *creation, state string) (ow
 		if err != nil {
 			return owned{}, errors.Join(ErrActivationUnknown, err)
 		}
-		if o.value.Generation != e.generation || o.value.Factory != n.tokens[e.key.Type] {
+		if o.value.Generation != e.generation || o.value.Factory != e.registration.token {
 			return owned{}, ErrActivationUnknown
 		}
 		if o.value.State == state {
@@ -392,6 +396,7 @@ func (n *network) transition(ctx context.Context, e *creation, state string) (ow
 // spawns additional workers. FAILED retains its generation budget until Stop/Close.
 func (n *network) monitorActivation(e *creation) {
 	defer n.rt.work.Done()
+	defer e.registration.work.Done()
 	w := e.activation
 	<-e.done
 	defer n.finishActivation(e)
@@ -444,7 +449,7 @@ func (n *network) monitorActivation(e *creation) {
 		Operation:       newOperation(),
 		Key:             e.key,
 		Generation:      e.generation,
-		Factory:         n.tokens[e.key.Type],
+		Factory:         e.registration.token,
 		Cause:           cause,
 		CreatedInstance: !e.local.IsZero(),
 		Evidence:        evidence,
@@ -577,7 +582,7 @@ type stopActivationRequest struct {
 
 func (f *factory) stopActivation(ctx actorx.Context, msg stopActivationRequest, reply actorx.Reply[any]) error {
 	e := f.entries[msg.key]
-	if e == nil || e.generation != msg.generation || e.activation == nil || msg.factory != f.rt.net.tokens[msg.key.Type] {
+	if e == nil || e.generation != msg.generation || e.activation == nil || msg.factory != f.registration.token {
 		return ErrActivationUnknown
 	}
 	_, err := actorx.StartTask(ctx, func(taskCtx context.Context) (any, error) {
@@ -823,7 +828,7 @@ func (n *network) finishActivation(e *creation) {
 	// If Factory has died, its Stopped hook drops the whole map instead.
 	for {
 		ctx, cancel := managementContext()
-		err := n.rt.factories[e.key.Type].Send(ctx, forgetActivation{e.key, e.generation})
+		err := e.registration.factory.Send(ctx, forgetActivation{e.key, e.generation})
 		cancel()
 		if err == nil || errors.Is(err, actorx.ErrStopped) || errors.Is(err, actorx.ErrClosed) {
 			return

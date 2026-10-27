@@ -38,12 +38,13 @@ var CounterSpec = dist.ActorSpec[*Counter]{
 }
 ```
 
-Counter 定义业务行为，CounterSpec 声明逻辑类型和构造函数。工作进程注册 Spec，并保持运行以处理后续请求；下面省略常规错误处理及等待退出的代码：
+Counter 定义业务行为，CounterSpec 声明逻辑类型和构造函数。工作进程注册 Spec，并保持运行以处理后续请求；退出时 Runtime.Close 统一撤销注册并等待实例收尾。下面省略常规错误处理及等待退出的代码：
 
 ```go
 ctx := context.Background()
-worker, _ := dist.NewRuntime(ctx, dist.WithActor(CounterSpec))
+worker, _ := dist.NewRuntime(ctx)
 defer worker.Close(ctx)
+_, _ = dist.Register(ctx, worker, CounterSpec)
 ```
 
 另一个调用进程创建自己的 Runtime，无需注册 Actor。以下假设已取得请求上下文 ctx，且目标 ID 尚未使用：

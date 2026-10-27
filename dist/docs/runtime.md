@@ -4,6 +4,28 @@ English | [中文](runtime.zh.md)
 
 Send/Call/Stream follow one path: **validate the contract → select and fix a generation → wait for READY → send through NATS**. The target runs business code through actorx mailboxes, including same-process calls. See [concepts](concepts.md) for the address model.
 
+## Registration and withdrawal
+
+Startup and later registration use the same API:
+
+```go
+rt, err := dist.NewRuntime(ctx)
+// Check err and arrange Runtime.Close before registering worker types.
+registration, err := dist.Register(ctx, rt, CounterSpec)
+// Check err before opening application admission.
+
+// To withdraw this Runtime's registration independently:
+err = registration.Unregister(cleanupCtx)
+```
+
+NewRuntime initializes execution, the connection and Registry. Register validates ActorSpec, publishes the immutable contract and installs the Factory and control/activation subscriptions. Success includes Flush and constructs no business instances. Even when all Types are known before startup, register them through this API. Registration uses a five-second default total budget, capped at sixty seconds with an explicit deadline; Runtime.Close also cancels installation.
+
+Duplicate local Types, including registrations still draining, return ErrSetup; exceeding Types returns ErrFull. Different Runtimes can register the same Type with an identical contract. Installation failures trigger automatic cleanup and may return a non-nil handle alongside the error; Unregister can join that cleanup. Already published immutable contracts remain and are verified on retry.
+
+Unregister immediately closes the registration's new-activation gate, stops its logical instances, and joins in-flight construction, actual exit and required terminal commits before removing controls and releasing Type capacity. Other registrations and other Runtimes' same-Type capability remain available. Withdrawal currently stops owned instances; applications that need draining should drain their business entry first. Independently spawned local children retain their application-defined cleanup responsibility.
+
+Unregister is idempotent. Timeout ends only the wait; cleanup continues and can be joined again. Re-register a local Type only after its old registration has settled. The new registration gets a fresh token; old handles cannot withdraw it, and old Addr values remain fixed to their original generation. Runtime.Close joins all unfinished registrations.
+
 ## Completion, ordering and errors
 
 | Call or observation | Meaning |
@@ -51,8 +73,10 @@ Set limits when creating each worker or caller Runtime; omitted fields retain th
 
 ```go
 rt, err := dist.NewRuntime(ctx,
-    dist.WithActor(CounterSpec),
     dist.WithExecutionLimits(dist.ExecutionLimits{
+        Types:           1024,
+        Creating:        32,
+        CreatingPerType: 8,
         Instances:       256,
         MailboxCapacity: 64,
     }),
@@ -65,6 +89,9 @@ rt, err := dist.NewRuntime(ctx,
 
 | Field | Default | Scope |
 | --- | ---: | --- |
+| ExecutionLimits.Types | unlimited | Locally registered Actor types; independent of business instance capacity and the known-contract cache |
+| ExecutionLimits.Creating | 16 | Concurrent instance creation/startup across this Runtime |
+| ExecutionLimits.CreatingPerType | 4 | Concurrent instance creation/startup per Type within this Runtime |
 | ExecutionLimits.Instances | 64 | Business instances including local children; also the independently counted distributed activation budget |
 | ExecutionLimits.MailboxCapacity | 16 | Queued work plus reserved task completions per Actor |
 | ExecutionLimits.Pending | 32 | Admitted, unsettled requests per Actor, including Send and Deferred requests |
@@ -74,11 +101,13 @@ rt, err := dist.NewRuntime(ctx,
 
 Mailbox capacity is released when work leaves the queue; Pending remains occupied until the request settles. A Deferred handler can return with an empty mailbox while its reply still occupies Pending. StartTask reserves a mailbox completion slot as well as a task slot.
 
+Type registration does not construct business instances. Types is an optional registration quota; it does not configure other Runtimes or enlarge the caller's 64-entry contract cache. Creating and CreatingPerType bound creation/startup rather than running instances; both also obey Instances. Slots remain occupied until creation results are adopted or discarded with cleanup complete.
+
 Instances configures both execution and activation capacity with one value. Each has its own accounting: failed or exited activations awaiting release can still occupy activation capacity, while local children occupy only execution capacity. Streams also use request capacity. Send ACK waits are capped at half Requests, rounded up; activation/control requests share reply associations with business requests.
 
-Zero selects the default, not unlimited capacity. Negative values or resource arithmetic overflow return actorx.ErrSetup before declarations are read or a connection is opened. The last option of the same group replaces the whole group, then zero fields receive defaults. Configuration is fixed for the Runtime lifetime and does not change peers or server quotas.
+Zero selects the default: Types has no count limit by default; all other fields have finite defaults. Negative values or resource arithmetic overflow return actorx.ErrSetup before a connection is opened. The last option of the same group replaces the whole group, then zero fields receive defaults. Configuration is fixed for the Runtime lifetime and does not change peers or server quotas.
 
-Factory settings and creation concurrency stay internal. Request/reply buffers and dispatch queues grow with the configured transport limits; wire windows, payload sizes, dispatch worker counts and Registry I/O/storage limits stay independently bounded. These ceilings do not guarantee admission: another budget can return ErrFull first. See the [resource table](contract.md#time-and-development-resource-profile) for the default profile and derived capacities; increasing Instances requires checking storage headroom.
+Factory instance capacity follows Types. Factory task/completion capacity grows with the effective creation concurrency, retaining control/cleanup headroom independently of business Tasks. Request/reply buffers and dispatch queues grow with the configured transport limits; wire windows, payload sizes, dispatch worker counts and Registry I/O/storage limits stay independently bounded. These ceilings do not guarantee admission: another budget can return ErrFull first. See the [resource table](contract.md#time-and-development-resource-profile) for the default profile and derived capacities; increasing Instances requires checking storage headroom.
 
 ## Error classifications
 

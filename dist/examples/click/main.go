@@ -27,14 +27,7 @@ func main() {
 
 func run(url, role, id string) (result error) {
 	options := []dist.Option{dist.WithNATS(url)}
-	switch role {
-	case "button":
-		options = append(options, dist.WithActor(ButtonSpec))
-	case "counter":
-		options = append(options, dist.WithActor(CounterSpec))
-	case "client":
-		// The client resolves logical addresses; it hosts no Actor types.
-	default:
+	if role != "button" && role != "counter" && role != "client" {
 		return fmt.Errorf("unknown role %q: want button, counter or client", role)
 	}
 	rt, err := dist.NewRuntime(context.Background(), options...)
@@ -48,6 +41,17 @@ func run(url, role, id string) (result error) {
 		defer cancel()
 		result = errors.Join(result, rt.Close(ctx))
 	}()
+
+	switch role {
+	case "button":
+		if _, err := dist.Register(context.Background(), rt, ButtonSpec); err != nil {
+			return err
+		}
+	case "counter":
+		if _, err := dist.Register(context.Background(), rt, CounterSpec); err != nil {
+			return err
+		}
+	}
 
 	// Each worker serves only its registered type until interrupted.
 	if role != "client" {

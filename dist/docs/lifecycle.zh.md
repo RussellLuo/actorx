@@ -11,6 +11,7 @@
 | 多调用方共享对象 | 应用约定停止时机；一次请求或调用方关闭不代表共享对象不再需要 |
 | 独占临时对象 | 保留原 Addr，用独立收尾期限 Stop → Wait，再关闭调用方 Runtime |
 | Actor 间协作 | 地址和调用不建立停止传播；专属依赖由应用显式结束 |
+| 撤销类型注册 | Registration.Unregister 关闭该份新激活能力，停止并结清所属逻辑实例；见[注册与撤销](runtime.zh.md#注册与撤销) |
 | 所属工作进程退出 | Runtime.Close 结清全部所属代，包括保留的失败激活和本地子对象 |
 
 丢失 Addr、结束调用、关闭调用方或停止发起者不自动停止远端对象。省略 ID 后通信会访问新对象，当前没有闲置回收。Self 也不提供自动退订或级联停止。
@@ -43,7 +44,7 @@ exit, err := addr.Wait(cleanup)
 
 ## 失败激活
 
-New nil/panic、绑定契约不一致或 Spawn/Started 失败，须完整回滚后才提交失败终态。此时 **Wait 可成功观察失败，但 key 和代预算仍被保留**，不会自动重新构造；Stop 或拥有者 Runtime.Close 才释放。失败激活的 Stop 须等释放提交后成功，原原因不变；缓存的失败 Exit 也不证明已释放。
+New nil/panic、绑定契约不一致或 Spawn/Started 失败，须完整回滚后才提交失败终态。此时 **Wait 可成功观察失败，但 key 和代预算仍被保留**，不会自动重新构造；Stop、所属 Registration.Unregister 或拥有者 Runtime.Close 才释放。失败激活的 Stop 须等释放提交后成功，原原因不变；缓存的失败 Exit 也不证明已释放。
 
 普通业务 error 只结束请求；panic、自停及显式 Stop 触发实例退出。完整状态与提交证据见 [Registry 协议](registry.zh.md#记录与条件操作)。
 

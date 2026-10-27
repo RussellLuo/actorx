@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文 · [模块](../../README.zh.md)
 
-actors.go 定义 Add、Counter 和 CounterSpec；main.go 负责参数、Runtime 生命周期及两个进程角色：worker 通过 `WithActor(CounterSpec)` 注册创建能力并等待退出；client 不注册 Actor，只调用远端 Counter。默认角色为 client。
+actors.go 定义 Add、Counter 和 CounterSpec；main.go 负责参数、Runtime 生命周期及两个进程角色：worker 通过 `dist.Register(ctx, rt, CounterSpec)` 注册创建能力并等待退出；client 不注册 Actor，只调用远端 Counter。默认角色为 client。
 
 先启动[开发 NATS 服务](../../README.zh.md)，再从 dist 目录，在不同终端运行：
 

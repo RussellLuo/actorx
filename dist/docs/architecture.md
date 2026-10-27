@@ -72,7 +72,7 @@ sequenceDiagram
     N->>B: LocalChannel.Deliver / Responder
 ```
 
-After connection, KV and full-contract validation, initialization installs/flushes dedicated control.* subscriptions before shared Factory queue entries. Admission opens after complete readiness. Conditional KV writes grant unique creation rights; local deduplication and queue distribution do not establish ownership. Existing candidates require conditional confirmation by their original Factory; unreachable owners are not replaced. Lost claim/READY acknowledgements reconcile the original generation/operation without another New or binding an unconfirmed candidate.
+NewRuntime initializes execution, the connection and KV. Register validates and publishes one full contract, then installs/flushes dedicated control.* subscriptions before its shared Factory queue entry. That registration opens admission after complete readiness. Conditional KV writes grant unique creation rights; local deduplication and queue distribution do not establish ownership. Existing candidates require conditional confirmation by their original Factory; unreachable owners are not replaced. Lost claim/READY acknowledgements reconcile the original generation/operation without another New or binding an unconfirmed candidate.
 
 NATS callbacks only validate and enqueue bounded work. Business and control dispatch are separate. Receivers validate key/generation, full fingerprint, message and mode before delivering to core mailboxes. Same-process calls follow this path too.
 

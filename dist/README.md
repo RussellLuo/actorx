@@ -38,12 +38,13 @@ var CounterSpec = dist.ActorSpec[*Counter]{
 }
 ```
 
-Counter defines business behavior; CounterSpec declares its logical type and constructor. A worker registers the Spec and stays running to handle requests. Routine error handling and waiting for shutdown are omitted here:
+Counter defines business behavior; CounterSpec declares its logical type and constructor. A worker registers the Spec and stays running to handle requests. Runtime.Close withdraws its registrations and joins its instances. Routine error handling and waiting for shutdown are omitted here:
 
 ```go
 ctx := context.Background()
-worker, _ := dist.NewRuntime(ctx, dist.WithActor(CounterSpec))
+worker, _ := dist.NewRuntime(ctx)
 defer worker.Close(ctx)
+_, _ = dist.Register(ctx, worker, CounterSpec)
 ```
 
 A separate caller creates its own Runtime without registering Actors. The following assumes a request context ctx and a previously unused target ID:

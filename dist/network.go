@@ -142,20 +142,19 @@ func (rt *Runtime) Diagnostics() ([]Diagnostic, uint64) {
 }
 
 type incoming struct {
-	msg        *nats.Msg
-	typ, token string
-	control    bool
-	business   *businessTarget
-	overloaded bool
+	msg          *nats.Msg
+	typ, token   string
+	registration *Registration
+	control      bool
+	business     *businessTarget
+	overloaded   bool
 }
 
 type network struct {
-	rt               *Runtime
-	nc               *nats.Conn
-	registry         *registry
-	tokens           map[string]string
-	shared, controls []*nats.Subscription
-	ready            readiness
+	rt       *Runtime
+	nc       *nats.Conn
+	registry *registry
+	ready    readiness
 
 	diagnostics chan Diagnostic
 	dropped     atomic.Uint64
@@ -207,7 +206,6 @@ func (n *network) report(op string, err error) {
 func (rt *Runtime) connect(ctx context.Context, opts nats.Options) error {
 	n := &network{
 		rt:           rt,
-		tokens:       map[string]string{},
 		diagnostics:  make(chan Diagnostic, 64),
 		reconnect:    make(chan struct{}, 1),
 		ordinary:     make(chan incoming, rt.limits.payloads()),
@@ -257,18 +255,7 @@ func (rt *Runtime) connect(ctx context.Context, opts nats.Options) error {
 	if err = n.registry.initialize(ctx); err != nil {
 		return err
 	}
-	for name, spec := range rt.specs {
-		if err = n.registry.publishType(ctx, name, spec.contract); err != nil {
-			return fmt.Errorf("dist: Type %s: %w", name, err)
-		}
-	}
-	for name := range rt.specs {
-		token, err := identity.NewOpaque()
-		if err != nil {
-			return err
-		}
-		n.tokens[name] = token
-	}
+
 	return nil
 }
 
@@ -298,31 +285,6 @@ func controlSubject(typ, token string) string {
 func (n *network) subscribe(ctx context.Context) error {
 	epoch := n.ready.epoch()
 
-	// All dedicated controls are installed and flushed before any shared entry.
-	for name, token := range n.tokens {
-		sub, err := n.nc.Subscribe(controlSubject(name, token), n.callback(name, token, true))
-		if err != nil {
-			return err
-		}
-		n.controls = append(n.controls, sub)
-		if err = sub.SetPendingLimits(8, 1<<20); err != nil {
-			return err
-		}
-	}
-	if err := n.nc.FlushWithContext(ctx); err != nil {
-		return err
-	}
-	for name := range n.tokens {
-		subject := factorySubject(name)
-		sub, err := n.nc.QueueSubscribe(subject, subject+".workers", n.callback(name, "", false))
-		if err != nil {
-			return err
-		}
-		n.shared = append(n.shared, sub)
-		if err = sub.SetPendingLimits(8, 1<<20); err != nil {
-			return err
-		}
-	}
 	if err := n.nc.FlushWithContext(ctx); err != nil {
 		return err
 	}
@@ -349,7 +311,7 @@ func (n *network) subscribe(ctx context.Context) error {
 	return nil
 }
 
-func (n *network) callback(typ, token string, control bool) nats.MsgHandler {
+func (n *network) callback(r *Registration, control bool) nats.MsgHandler {
 	return func(msg *nats.Msg) {
 		if len(msg.Data) > 128<<10 {
 			n.report("frame", ErrProtocol)
@@ -363,7 +325,7 @@ func (n *network) callback(typ, token string, control bool) nats.MsgHandler {
 		// SDK owns this Msg exclusively until handed to one bounded queue. No copy,
 		// no callback I/O, and no goroutine per frame.
 		select {
-		case queue <- incoming{msg: msg, typ: typ, token: token, control: control}:
+		case queue <- incoming{msg: msg, typ: r.spec.name, token: r.token, registration: r, control: control}:
 		default:
 			n.report("dispatch", actorx.ErrFull)
 		}
@@ -412,7 +374,10 @@ func (n *network) supervise() {
 				n.report("reconnect", err)
 			}
 		case now := <-ticker.C:
-			if len(n.tokens) == 0 || !n.ready.Load() {
+			n.rt.mu.Lock()
+			hasTypes := len(n.rt.registrations) > 0
+			n.rt.mu.Unlock()
+			if !hasTypes || !n.ready.Load() {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(n.rt.life, time.Second)
@@ -428,8 +393,12 @@ func (n *network) supervise() {
 
 func (n *network) closeAdmission() {
 	n.ready.Store(false)
-	for _, sub := range n.shared {
-		_ = sub.Unsubscribe()
+	n.rt.mu.Lock()
+	defer n.rt.mu.Unlock()
+	for _, r := range n.rt.registrations {
+		if r.shared != nil {
+			_ = r.shared.Unsubscribe()
+		}
 	}
 }
 
@@ -437,9 +406,13 @@ func (n *network) closeAdmission() {
 // in-flight control completions. Control callbacks cannot enqueue afterwards.
 func (n *network) quiesce() {
 	n.quiesceOnce.Do(func() {
-		for _, sub := range n.controls {
-			_ = sub.Unsubscribe()
+		n.rt.mu.Lock()
+		for _, r := range n.rt.registrations {
+			if r.control != nil {
+				_ = r.control.Unsubscribe()
+			}
 		}
+		n.rt.mu.Unlock()
 		close(n.stop)
 		n.wg.Wait()
 	})
@@ -523,6 +496,10 @@ func safeReply(s string) bool {
 }
 
 func (n *network) handle(in incoming) {
+	r := in.registration
+	if r == nil {
+		return
+	}
 	var req factoryFrame
 	if strictjson.Validate(in.msg.Data, 128<<10, 16, 1024) != nil {
 		return
@@ -558,14 +535,20 @@ func (n *network) handle(in incoming) {
 			err = ErrProtocol
 		}
 	}
-	if err == nil && req.Fingerprint != "" && req.Fingerprint != n.rt.specs[in.typ].contract.fingerprint {
+	if err == nil && req.Fingerprint != "" && req.Fingerprint != r.spec.contract.fingerprint {
 		err = ErrContract
 	}
 	if err == nil && !in.control && !n.ready.Load() {
 		err = ErrOwnerUnavailable
 	}
 	if err == nil && !in.control {
-		err = n.rt.checkOpen()
+		n.rt.mu.Lock()
+		if n.rt.closed {
+			err = actorx.ErrClosed
+		} else if !r.ready || r.draining || n.rt.registrations[in.typ] != r {
+			err = ErrTypeUnavailable
+		}
+		n.rt.mu.Unlock()
 	}
 	var payload any
 	limit := time.Now().Add(60 * time.Second)
@@ -585,7 +568,7 @@ func (n *network) handle(in incoming) {
 	if err == nil {
 		if req.Operation == "confirm" {
 			// Factory schedules KV I/O through StartTask, never its handler or SDK callback.
-			payload, err = n.rt.factories[in.typ].Call[owned](bounded, confirmRequest{ActorKey{req.Type, req.ID}, req.Generation, in.token})
+			payload, err = r.factory.Call[owned](bounded, confirmRequest{ActorKey{req.Type, req.ID}, req.Generation, in.token})
 			if err == nil {
 				confirmed := payload.(owned)
 				req.Generation = confirmed.value.Generation
@@ -602,13 +585,13 @@ func (n *network) handle(in incoming) {
 			}
 			if decodeRecord(req.Payload, &intent) != nil || intent.Create == nil {
 				err = ErrProtocol
-			} else if req.Fingerprint != n.rt.specs[in.typ].contract.fingerprint {
+			} else if req.Fingerprint != r.spec.contract.fingerprint {
 				err = ErrContract
 			} else if !*intent.Create {
 				payload, err = n.lookup(bounded, ActorKey{req.Type, req.ID})
 			} else {
 				var entry *creation
-				entry, err = n.rt.factories[in.typ].Call[*creation](bounded, activateRequest{ActorKey{req.Type, req.ID}})
+				entry, err = r.factory.Call[*creation](bounded, activateRequest{ActorKey{req.Type, req.ID}})
 				if err == nil {
 					select {
 					case <-entry.activation.selected:
@@ -627,7 +610,7 @@ func (n *network) handle(in incoming) {
 				cause, err = errwire.Decode(req.Payload)
 			}
 			if err == nil {
-				_, err = n.rt.factories[in.typ].Call[any](bounded, stopActivationRequest{key: ActorKey{req.Type, req.ID}, generation: req.Generation, factory: in.token, cause: cause})
+				_, err = r.factory.Call[any](bounded, stopActivationRequest{key: ActorKey{req.Type, req.ID}, generation: req.Generation, factory: in.token, cause: cause})
 			}
 		}
 	}
@@ -637,7 +620,7 @@ func (n *network) handle(in incoming) {
 	}
 	req.Kind = "complete"
 	if req.Factory == "" {
-		req.Factory = n.tokens[in.typ]
+		req.Factory = r.token
 	}
 	req.Reply = ""
 	req.Payload = nil
@@ -694,7 +677,13 @@ func (s *readiness) epoch() uint64 { return s.state.Load() }
 func (s *readiness) resume(epoch uint64) bool { return s.state.CompareAndSwap(epoch, epoch|1) }
 
 func (n *network) verifyOwnership(ctx context.Context) error {
+	n.rt.mu.Lock()
+	specs := make(map[string]registration, len(n.rt.specs))
 	for name, spec := range n.rt.specs {
+		specs[name] = spec
+	}
+	n.rt.mu.Unlock()
+	for name, spec := range specs {
 		entry, err := n.registry.get(ctx, typesBucket, "t."+identity.Token(name), true)
 		if err != nil {
 			return err
@@ -707,12 +696,14 @@ func (n *network) verifyOwnership(ctx context.Context) error {
 	held := make([]struct {
 		key        ActorKey
 		generation string
+		token      string
 	}, 0, len(n.rt.ledger))
 	for _, entry := range n.rt.ledger {
 		held = append(held, struct {
 			key        ActorKey
 			generation string
-		}{entry.key, entry.generation})
+			token      string
+		}{entry.key, entry.generation, entry.registration.token})
 	}
 	n.rt.mu.Unlock()
 	for _, entry := range held {
@@ -720,9 +711,56 @@ func (n *network) verifyOwnership(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if o.value.Generation != entry.generation || o.value.Factory != n.tokens[entry.key.Type] || o.value.State == "INACTIVE" {
+		if o.value.Generation != entry.generation || o.value.Factory != entry.token || o.value.State == "INACTIVE" {
 			return ErrActivationUnknown
 		}
+	}
+	return nil
+}
+
+// Each registration owns its subscriptions. Dedicated control is flushed before
+// exposing the shared creation route; callbacks carry this registration identity.
+func (n *network) installRegistration(ctx context.Context, r *Registration) error {
+	n.rt.mu.Lock()
+	if n.rt.closed || r.draining {
+		n.rt.mu.Unlock()
+		return actorx.ErrClosed
+	}
+	sub, err := n.nc.Subscribe(controlSubject(r.spec.name, r.token), n.callback(r, true))
+	r.control = sub
+	n.rt.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err = sub.SetPendingLimits(8, 1<<20); err != nil {
+		return err
+	}
+	if err = n.nc.FlushWithContext(ctx); err != nil {
+		return err
+	}
+	n.rt.mu.Lock()
+	if n.rt.closed || r.draining {
+		n.rt.mu.Unlock()
+		return actorx.ErrClosed
+	}
+	subject := factorySubject(r.spec.name)
+	sub, err = n.nc.QueueSubscribe(subject, subject+".workers", n.callback(r, false))
+	r.shared = sub
+	n.rt.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err = sub.SetPendingLimits(8, 1<<20); err != nil {
+		return err
+	}
+	if err = n.nc.FlushWithContext(ctx); err != nil {
+		return err
+	}
+	if err = n.nc.LastError(); err != nil {
+		return err
+	}
+	if !n.nc.IsConnected() || !n.ready.Load() {
+		return ErrOwnerUnavailable
 	}
 	return nil
 }

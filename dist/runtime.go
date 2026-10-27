@@ -11,21 +11,14 @@ import (
 	"github.com/go-aie/actorx"
 )
 
-const (
-	maxTypes           = 8
-	maxCreating        = 16
-	maxFactoryCreating = 4
-)
-
 type runtimeOptions struct {
-	specs     []func() (registration, error)
 	nats      natsConfig
 	localTest bool
 	execution ExecutionLimits
 	transport TransportLimits
 }
 
-// Option configures declarations, connection and resource limits before initialization.
+// Option configures connection and resource limits before initialization.
 type Option func(*runtimeOptions)
 
 // Runtime owns local execution, NATS subscriptions and a JetStream Registry.
@@ -40,6 +33,7 @@ type Runtime struct {
 
 	business, management *actorx.Runtime
 	execution            *actorx.LocalChannel
+	registrations        map[string]*Registration
 	factories            map[string]actorx.Addr
 	specs                map[string]registration
 
@@ -60,9 +54,10 @@ type Runtime struct {
 	invoke func(context.Context, Addr, actorx.Kind, any, reflect.Type, func(any) error) (any, error)
 }
 
-// NewRuntime validates all declarations without constructing business objects.
+// NewRuntime initializes execution, connection and Registry resources.
+// Use Register after creation to provide Actor types.
 // initCtx bounds initialization only; Close owns the successful lifetime.
-// Success includes NATS/KV contracts and all declared Factory entries being ready.
+// Success does not register any Actor types or construct business objects.
 func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {
 	if initCtx == nil {
 		return nil, actorx.ErrSetup
@@ -77,31 +72,20 @@ func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {
 		}
 		option(&cfg)
 	}
-	if len(cfg.specs) > maxTypes {
-		return nil, actorx.ErrSetup
-	}
 	limits, err := normalizeLimits(cfg.execution, cfg.transport)
 	if err != nil {
 		return nil, err
 	}
+
 	rt := &Runtime{
-		initialized: true,
-		limits:      limits,
-		specs:       map[string]registration{},
-		factories:   map[string]actorx.Addr{},
-		ledger:      map[string]*creation{},
-		perType:     map[string]int{},
-		done:        make(chan struct{}),
-	}
-	for _, read := range cfg.specs {
-		spec, err := read()
-		if err != nil {
-			return nil, err
-		}
-		if _, duplicate := rt.specs[spec.name]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate Type %q", actorx.ErrSetup, spec.name)
-		}
-		rt.specs[spec.name] = spec
+		initialized:   true,
+		registrations: map[string]*Registration{},
+		limits:        limits,
+		specs:         map[string]registration{},
+		factories:     map[string]actorx.Addr{},
+		ledger:        map[string]*creation{},
+		perType:       map[string]int{},
+		done:          make(chan struct{}),
 	}
 	if err := initCtx.Err(); err != nil {
 		return nil, err
@@ -124,30 +108,19 @@ func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {
 		actorx.WithStreamLimits(8, 64<<10),
 		actorx.WithInstanceLimit(limits.execution.Instances),
 	)
-	if err == nil && len(rt.specs) > 0 {
+	if err == nil {
 		rt.management, err = actorx.NewRuntime(initCtx,
-			actorx.WithMailboxCapacity(64),
-			actorx.WithPendingLimit(128),
-			actorx.WithTaskLimit(8),
-			actorx.WithCallLimit(64),
+			actorx.WithMailboxCapacity(limits.managementMailbox()),
+			actorx.WithPendingLimit(limits.managementPending()),
+			actorx.WithTaskLimit(limits.managementTasks()),
+			actorx.WithCallLimit(limits.managementCalls()),
 			actorx.WithStreamLimits(1, 4<<10),
-			actorx.WithInstanceLimit(8),
+			actorx.WithInstanceLimit(limits.execution.Types),
 		)
 	}
 
-	// Publish contracts before exposing the local Factories through NATS.
 	if err == nil && !cfg.localTest {
 		err = rt.connect(initCtx, opts)
-	}
-	if err == nil {
-		for name, spec := range rt.specs {
-			var addr actorx.Addr
-			addr, err = rt.management.Spawn(&factory{rt: rt, spec: spec, entries: map[ActorKey]*creation{}})
-			if err != nil {
-				break
-			}
-			rt.factories[name] = addr
-		}
 	}
 	if err == nil && rt.net != nil {
 		err = rt.net.subscribe(initCtx)
@@ -163,18 +136,6 @@ func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {
 		return nil, err
 	}
 
-	// Losing a Factory also closes admission for its business instances.
-	for _, addr := range rt.factories {
-		go func() {
-			_, _ = addr.Wait(context.Background())
-			rt.mu.Lock()
-			unexpected := !rt.closed
-			rt.mu.Unlock()
-			if unexpected {
-				_ = rt.Close(context.Background())
-			}
-		}()
-	}
 	return rt, nil
 }
 
@@ -215,8 +176,15 @@ func (rt *Runtime) beginClose() {
 		rt.mu.Lock()
 		rt.closed = true
 		rt.cancel()
+		registrations := make([]*Registration, 0, len(rt.registrations))
+		for _, r := range rt.registrations {
+			registrations = append(registrations, r)
+		}
 		rt.mu.Unlock()
 
+		for _, r := range registrations {
+			r.beginUnregister()
+		}
 		go func() {
 			if rt.net != nil {
 				rt.net.closeAdmission()
@@ -232,8 +200,9 @@ func (rt *Runtime) beginClose() {
 			if rt.net != nil {
 				rt.net.quiesce()
 			}
-			for _, addr := range rt.factories {
-				_ = addr.Stop(nil)
+			for _, r := range registrations {
+				<-r.done
+				errs = append(errs, r.err)
 			}
 			if rt.management != nil {
 				errs = append(errs, rt.management.Close(context.Background()))

@@ -72,7 +72,7 @@ sequenceDiagram
     N->>B: LocalChannel.Deliver / Responder
 ```
 
-连接、KV 与完整契约校验后，先安装/Flush 每 Type 专属 control.*，再建立共享 Factory queue 入口；整体就绪后开放受理。唯一创建权由 KV 条件写入决定，本地去重和 queue 分发不授予归属。已有候选必须由原 Factory 条件确认；失联不接管。claim/READY 丢确认时核实原 generation/operation，不重新 New，不绑定未确认候选。
+NewRuntime 初始化执行、连接和 KV；Register 校验并发布一个完整契约，先安装/Flush 该 Type 专属 control.*，再建立共享 Factory queue 入口；该次注册完整就绪后开放受理。唯一创建权由 KV 条件写入决定，本地去重和 queue 分发不授予归属。已有候选必须由原 Factory 条件确认；失联不接管。claim/READY 丢确认时核实原 generation/operation，不重新 New，不绑定未确认候选。
 
 NATS 回调只做校验和有界排队；业务与控制分别分派。接收端核对 key/generation、完整指纹、消息及模式后，才向核心 mailbox 投递。同进程也走这条路径。
 

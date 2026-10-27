@@ -35,13 +35,13 @@ Run `nats-server -c nats.conf`. Runtime defaults to `nats://127.0.0.1:4222`; ove
 ```go
 rt, err := dist.NewRuntime(ctx,
     dist.WithNATS("nats://127.0.0.1:4222", nats.UserInfo("dev", "change-me")),
-    // Declare worker types with WithActor; omit them for a pure caller.
+    // After creation, register worker types with dist.Register(ctx, rt, spec).
 )
 ```
 
 An empty URL also selects the default. The last WithNATS replaces the entire URL/options snapshot. Invalid URLs, nil SDK options, lifecycle/error callback overrides, custom dialers, NoEcho and implicit initial-connect retries are rejected. Authentication and TLS options remain available. Runtime owns the connection exclusively. Initialization defaults to a maximum of ten seconds; after success, Close owns the lifetime.
 
-Startup validates every declared Type's contract and waits for entry readiness. Failure rolls back local resources, retaining compatible global contracts already published. Pure callers have no Factory subscriptions or write maintenance. See [architecture](architecture.md#activation-and-business-paths) for initialization order.
+Register validates one Type's contract and waits for entry readiness. Installation failure starts automatic local cleanup and may return a handle for joining it through Unregister; already published immutable contracts remain. Pure callers have no Factory subscriptions or write maintenance. See [architecture](architecture.md#activation-and-business-paths) for initialization order.
 
 ## Storage and permissions
 

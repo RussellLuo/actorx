@@ -11,7 +11,9 @@ type ActorKey struct {
 
 // ActorSpec declares a worker's logical type and local constructor.
 // T must be a concrete pointer to a struct implementing actorx.Actor.
-// Registration validates that restriction without invoking New.
+// Register validates that restriction without invoking New.
+// Use Register for both startup and later declarations; its Registration handle
+// owns withdrawal through Unregister.
 type ActorSpec[T actorx.Actor] struct {
 	Type string
 	New  func(ActorKey) T

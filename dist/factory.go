@@ -12,14 +12,15 @@ import (
 // creation is the Runtime's resource ledger entry, not an execution object.
 // done publishes the immutable result; it survives a dead Factory mailbox.
 type creation struct {
-	key        ActorKey
-	generation string
-	done       chan struct{}
-	once       sync.Once
-	local      actorx.Addr
-	err        error
-	releasing  bool            // Factory mailbox only
-	activation *activationWork // nil for the local integration seam
+	key          ActorKey
+	registration *Registration
+	generation   string
+	done         chan struct{}
+	once         sync.Once
+	local        actorx.Addr
+	err          error
+	releasing    bool            // Factory mailbox only
+	activation   *activationWork // nil for the local integration seam
 }
 
 type createRequest struct {
@@ -28,9 +29,10 @@ type createRequest struct {
 }
 
 type factory struct {
-	rt      *Runtime
-	spec    registration
-	entries map[ActorKey]*creation // accessed only by its mailbox
+	rt           *Runtime
+	spec         registration
+	registration *Registration
+	entries      map[ActorKey]*creation // accessed only by its mailbox
 }
 
 func (f *factory) Bindings() []actorx.Binding {
@@ -61,11 +63,11 @@ func (f *factory) create(ctx actorx.Context, msg createRequest) (*creation, erro
 	rt := f.rt
 	spec := f.spec // immutable worker snapshot
 	rt.mu.Lock()
-	if rt.closed {
+	if rt.closed || f.registration.draining || !f.registration.ready {
 		rt.mu.Unlock()
 		return nil, actorx.ErrClosed
 	}
-	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= maxCreating || rt.perType[f.spec.name] >= maxFactoryCreating {
+	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= rt.limits.execution.Creating || rt.perType[f.spec.name] >= rt.limits.execution.CreatingPerType {
 		rt.mu.Unlock()
 		return nil, actorx.ErrFull
 	}
@@ -73,11 +75,12 @@ func (f *factory) create(ctx actorx.Context, msg createRequest) (*creation, erro
 		rt.mu.Unlock()
 		return nil, actorx.ErrSetup
 	}
-	entry := &creation{key: msg.key, generation: msg.generation, done: make(chan struct{})}
+	entry := &creation{registration: f.registration, key: msg.key, generation: msg.generation, done: make(chan struct{})}
 	rt.ledger[msg.generation] = entry
 	rt.creating++
 	rt.perType[f.spec.name]++
 	rt.work.Add(1)
+	f.registration.work.Add(1)
 	rt.mu.Unlock()
 	f.entries[msg.key] = entry
 
@@ -89,7 +92,7 @@ func (f *factory) create(ctx actorx.Context, msg createRequest) (*creation, erro
 		}
 
 		rt.mu.Lock()
-		closed := rt.closed
+		closed := rt.closed || f.registration.draining
 		rt.mu.Unlock()
 		if closed {
 			return actorx.Addr{}, actorx.ErrClosed
@@ -132,6 +135,7 @@ func (rt *Runtime) settle(entry *creation, local actorx.Addr, err error, discard
 		rt.mu.Unlock()
 		close(entry.done)
 		rt.work.Done()
+		entry.registration.work.Done()
 	})
 }
 
@@ -142,7 +146,7 @@ func (rt *Runtime) createLocal(ctx context.Context, key ActorKey, generation str
 	if err := rt.checkOpen(); err != nil {
 		return nil, err
 	}
-	factory, ok := rt.factories[key.Type]
+	factory, ok := rt.localFactory(key.Type)
 	if !ok {
 		return nil, ErrTypeUnavailable
 	}
@@ -185,16 +189,17 @@ func (f *factory) release(ctx actorx.Context, msg releaseRequest, reply actorx.R
 	entry.releasing = true
 	rt := f.rt
 	rt.mu.Lock()
-	if rt.closed {
+	if rt.closed || f.registration.draining || !f.registration.ready {
 		rt.mu.Unlock()
 		entry.releasing = false
 		return actorx.ErrClosed
 	}
 	rt.work.Add(1)
+	f.registration.work.Add(1)
 	rt.mu.Unlock()
 
 	var once sync.Once
-	finish := func() { once.Do(rt.work.Done) }
+	finish := func() { once.Do(func() { rt.work.Done(); f.registration.work.Done() }) }
 	_, err := actorx.StartTask(ctx.WithContext(rt.life), func(context.Context) (actorx.Exit, error) {
 		if entry.local.IsZero() {
 			return actorx.Exit{Reason: entry.err}, nil
@@ -226,7 +231,7 @@ func (rt *Runtime) releaseLocal(ctx context.Context, key ActorKey, generation st
 	if err := rt.checkOpen(); err != nil {
 		return err
 	}
-	factory, ok := rt.factories[key.Type]
+	factory, ok := rt.localFactory(key.Type)
 	if !ok {
 		return ErrTypeUnavailable
 	}
@@ -235,6 +240,11 @@ func (rt *Runtime) releaseLocal(ctx context.Context, key ActorKey, generation st
 }
 
 func (f *factory) stopping(actorx.Context, actorx.Stopping) error {
-	f.rt.beginClose() // no wait on this Factory or its workers
+	f.rt.mu.Lock()
+	expected := f.registration.draining || f.rt.closed
+	f.rt.mu.Unlock()
+	if !expected {
+		f.rt.beginClose()
+	} // no wait on this Factory or its workers
 	return nil
 }

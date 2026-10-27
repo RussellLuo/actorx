@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -23,11 +22,25 @@ func testContext(t *testing.T) context.Context {
 	return ctx
 }
 
-func testRuntime(t *testing.T, options ...Option) *Runtime {
-	t.Helper()
+type testRegistration func(context.Context, *Runtime) (*Registration, error)
 
-	options = append(options, func(cfg *runtimeOptions) { cfg.localTest = true })
-	rt, err := NewRuntime(testContext(t), options...)
+func registerSpec[T actorx.Actor](spec ActorSpec[T]) testRegistration {
+	return func(ctx context.Context, rt *Runtime) (*Registration, error) { return Register(ctx, rt, spec) }
+}
+
+func testRuntime(t *testing.T, options ...any) *Runtime {
+	t.Helper()
+	return testRuntimeWithOptions(t, []Option{func(cfg *runtimeOptions) { cfg.localTest = true }}, options...)
+}
+
+func testRuntimeWithOptions(t *testing.T, config []Option, fixtures ...any) *Runtime {
+	t.Helper()
+	for _, fixture := range fixtures {
+		if option, ok := fixture.(Option); ok {
+			config = append(config, option)
+		}
+	}
+	rt, err := NewRuntime(testContext(t), config...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,6 +51,13 @@ func testRuntime(t *testing.T, options ...Option) *Runtime {
 			t.Error(err)
 		}
 	})
+	for _, fixture := range fixtures {
+		if register, ok := fixture.(testRegistration); ok {
+			if _, err := register(testContext(t), rt); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	return rt
 }
 
@@ -156,8 +176,8 @@ func (c *counter) series(ctx actorx.Context, _ series, reply actorx.StreamReply[
 	return nil
 }
 
-func counterOption(name string) Option {
-	return WithActor(ActorSpec[*counter]{Type: name, New: func(ActorKey) *counter { return &counter{} }})
+func counterRegistration(name string) testRegistration {
+	return registerSpec(ActorSpec[*counter]{Type: name, New: func(ActorKey) *counter { return &counter{} }})
 }
 
 type erased interface{ actorx.Actor }
@@ -184,31 +204,31 @@ func (m *mismatch) Bindings() []actorx.Binding {
 }
 
 func TestRegistrationValidationAndSnapshots(t *testing.T) {
-	cases := map[string][]Option{
-		"nil option":       {nil},
-		"nil New":          {WithActor(ActorSpec[*counter]{Type: "counter"})},
-		"erased":           {WithActor(ActorSpec[erased]{Type: "counter", New: func(ActorKey) erased { panic("New executed") }})},
-		"value":            {WithActor(ActorSpec[valueActor]{Type: "counter", New: func(ActorKey) valueActor { return valueActor{} }})},
-		"invalid type":     {counterOption("Bad")},
-		"duplicate":        {counterOption("counter"), counterOption("counter")},
-		"metadata panic":   {WithActor(ActorSpec[*metadataPanic]{Type: "counter", New: func(ActorKey) *metadataPanic { panic("New executed") }})},
-		"invalid bindings": {WithActor(ActorSpec[*invalidBindings]{Type: "counter", New: func(ActorKey) *invalidBindings { panic("New executed") }})},
+	cases := map[string][]testRegistration{
+		"nil New":          {registerSpec(ActorSpec[*counter]{Type: "counter"})},
+		"erased":           {registerSpec(ActorSpec[erased]{Type: "counter", New: func(ActorKey) erased { panic("New executed") }})},
+		"value":            {registerSpec(ActorSpec[valueActor]{Type: "counter", New: func(ActorKey) valueActor { return valueActor{} }})},
+		"invalid type":     {counterRegistration("Bad")},
+		"duplicate":        {counterRegistration("counter"), counterRegistration("counter")},
+		"metadata panic":   {registerSpec(ActorSpec[*metadataPanic]{Type: "counter", New: func(ActorKey) *metadataPanic { panic("New executed") }})},
+		"invalid bindings": {registerSpec(ActorSpec[*invalidBindings]{Type: "counter", New: func(ActorKey) *invalidBindings { panic("New executed") }})},
 	}
-	for name, options := range cases {
+	for name, registrations := range cases {
 		t.Run(name, func(t *testing.T) {
-			options = append(options, func(cfg *runtimeOptions) { cfg.localTest = true })
-			rt, err := NewRuntime(testContext(t), options...)
-			if rt != nil || !errors.Is(err, actorx.ErrSetup) {
-				t.Fatal(rt, err)
+			rt := testRuntime(t)
+			var err error
+			for _, register := range registrations {
+				_, err = register(testContext(t), rt)
+				if err != nil {
+					break
+				}
+			}
+			if !errors.Is(err, actorx.ErrSetup) {
+				t.Fatal(err)
 			}
 		})
 	}
-
-	var many []Option
-	for i := range 9 {
-		many = append(many, counterOption(fmt.Sprintf("type%d", i)))
-	}
-	if rt, err := NewRuntime(testContext(t), many...); rt != nil || !errors.Is(err, actorx.ErrSetup) {
+	if rt, err := NewRuntime(testContext(t), nil); rt != nil || !errors.Is(err, actorx.ErrSetup) {
 		t.Fatal(rt, err)
 	}
 
@@ -218,7 +238,7 @@ func TestRegistrationValidationAndSnapshots(t *testing.T) {
 		newCalls.Add(1)
 		return &counter{started: &started, calls: &handler}
 	}}
-	option := WithActor(spec)
+	option := registerSpec(spec)
 	spec.Type = "changed"
 	spec.New = nil
 	for range 2 {
@@ -232,19 +252,19 @@ func TestRegistrationValidationAndSnapshots(t *testing.T) {
 	}
 
 	// Live bindings must still match the registered contract at construction time.
-	rt := testRuntime(t, WithActor(ActorSpec[*mismatch]{Type: "mismatch", New: func(ActorKey) *mismatch { return &mismatch{live: true} }}))
+	rt := testRuntime(t, registerSpec(ActorSpec[*mismatch]{Type: "mismatch", New: func(ActorKey) *mismatch { return &mismatch{live: true} }}))
 	if _, err := rt.createLocal(testContext(t), ActorKey{"mismatch", "1"}, token(t)); !errors.Is(err, ErrContract) {
 		t.Fatal(err)
 	}
 
 	client := testRuntime(t)
-	if client.management != nil || len(client.factories) != 0 {
-		t.Fatal("pure caller created management")
+	if len(client.factories) != 0 {
+		t.Fatal("pure caller registered types")
 	}
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if rt, err := NewRuntime(canceled, counterOption("counter")); rt != nil || !errors.Is(err, context.Canceled) {
+	if rt, err := NewRuntime(canceled); rt != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal(rt, err)
 	}
 }
@@ -252,10 +272,10 @@ func TestRegistrationValidationAndSnapshots(t *testing.T) {
 func TestLocalDynamicBridgeAndButtonFlow(t *testing.T) {
 	var handled atomic.Int32
 	rt := testRuntime(t,
-		WithActor(ActorSpec[*counter]{Type: "counter", New: func(ActorKey) *counter {
+		registerSpec(ActorSpec[*counter]{Type: "counter", New: func(ActorKey) *counter {
 			return &counter{calls: &handled}
 		}}),
-		WithActor(ActorSpec[*button]{Type: "button", New: func(ActorKey) *button {
+		registerSpec(ActorSpec[*button]{Type: "button", New: func(ActorKey) *button {
 			return &button{}
 		}}),
 	)
@@ -374,7 +394,7 @@ func TestDeduplicationAndSingleLiveBindingRead(t *testing.T) {
 	release := func() { releaseOnce.Do(func() { close(unblock) }) }
 	defer release()
 	var news, reads, called atomic.Int32
-	rt := testRuntime(t, WithActor(ActorSpec[*bindingReadProbe]{Type: "probe", New: func(ActorKey) *bindingReadProbe {
+	rt := testRuntime(t, registerSpec(ActorSpec[*bindingReadProbe]{Type: "probe", New: func(ActorKey) *bindingReadProbe {
 		news.Add(1)
 		close(entered)
 		<-unblock
