@@ -69,6 +69,8 @@ wire 使用严格 JSON 子集，单个 payload/chunk 最多64 KiB。自定义 co
 
 本地容量不足返回 ErrFull。SDK 溢出只有异步诊断，不能证明某请求未执行；明确拒绝也依赖有效回复路径，满载时仍可能结果未知。`rt.Diagnostics()` 提供故障观察。网络工作与核心 handler/任务分别记账，只在实际结清时释放；完整上限见[资源表](contract.zh.md#时间及开发资源配置)。
 
+新激活通过 Core NATS queue group 选择一个 Runtime。该 Runtime 在 claim 归属和构造 Actor 前检查 Instances、Creating、CreatingPerType；额度不足返回 ErrFull，并记录 `activate-rejected` 诊断，注明触发的额度。当前不设容量等待队列，也不自动改选候选；即使其他 Runtime 还有额度，本次激活仍可能失败。激活额度已满本身不妨碍调用已有实例。等待 Factory 结果超时或 claim 结果不明时返回 ErrActivationUnknown，并保留底层原因；已接纳工作继续由 Runtime 管理。通用 ErrFull 或超时不构成重试整个业务调用的授权。Diagnostics 是可能溢出的有界事件，不是完整容量计数器。
+
 ## 容量配置
 
 创建各个 worker 或调用方 Runtime 时设置容量，未填写的字段保留默认值：

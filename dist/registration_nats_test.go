@@ -83,12 +83,12 @@ func TestRegistrationNATS(t *testing.T) {
 		ctx := testContext(t)
 		typ := fmt.Sprintf("install-%x", time.Now().UnixNano())
 		entered, release := make(chan struct{}), make(chan struct{})
-		var once sync.Once
+		var once, enteredOnce sync.Once
 		unblock := func() { once.Do(func() { close(release) }) }
 		defer unblock()
 		worker.net.registry.readFault = func(bucket, key string) error {
 			if bucket == typesBucket && key == "t."+identity.Token(typ) {
-				close(entered)
+				enteredOnce.Do(func() { close(entered) })
 				<-release
 			}
 			return nil

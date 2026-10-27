@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -92,8 +93,19 @@ func (f *factory) activate(ctx actorx.Context, msg activateRequest) (*creation, 
 	if rt.closed || f.registration.draining || !f.registration.ready {
 		return nil, actorx.ErrClosed
 	}
-	if len(rt.ledger) >= rt.limits.execution.Instances || rt.creating >= rt.limits.execution.Creating || rt.perType[f.spec.name] >= rt.limits.execution.CreatingPerType {
-		return nil, actorx.ErrFull
+	var limit string
+	switch {
+	case len(rt.ledger) >= rt.limits.execution.Instances:
+		limit = "Instances"
+	case rt.creating >= rt.limits.execution.Creating:
+		limit = "Creating"
+	case rt.perType[f.spec.name] >= rt.limits.execution.CreatingPerType:
+		limit = "CreatingPerType"
+	}
+	if limit != "" {
+		err := fmt.Errorf("%w: activation %s limit", actorx.ErrFull, limit)
+		rt.net.report("activate-rejected", err)
+		return nil, err
 	}
 	gen, err := identity.NewOpaque()
 	if err != nil {

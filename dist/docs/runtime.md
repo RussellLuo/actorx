@@ -69,6 +69,8 @@ Wire values use a strict JSON subset with a 64 KiB limit per payload/chunk. Cust
 
 Local capacity failures return ErrFull. SDK overflow provides only asynchronous diagnostics, never evidence that a particular request did not execute. Explicit refusal also requires a valid reply path; saturated systems may still produce uncertainty. Observe faults through `rt.Diagnostics()`. Network work and core handlers/tasks have separate budgets, released only when actual work settles. See the [complete limits](contract.md#time-and-development-resource-profile).
 
+New activations use a Core NATS queue group to choose one Runtime. That Runtime checks Instances, Creating and CreatingPerType before claiming ownership or constructing the Actor; a refusal returns ErrFull and emits an `activate-rejected` diagnostic naming the exhausted limit. There is no capacity wait queue or automatic candidate retry: activation may fail even when another Runtime has room. A full activation budget does not itself prevent calls to existing instances. Factory response timeouts and uncertain claims return ErrActivationUnknown with the underlying cause; admitted work remains owned by the Runtime. A generic ErrFull or timeout is not permission to retry an entire business call. Diagnostics are bounded events that can overflow, not complete capacity counters.
+
 ## Resource configuration
 
 Set limits when creating each worker or caller Runtime; omitted fields retain the defaults:

@@ -594,6 +594,11 @@ func (n *network) handle(in incoming) {
 			} else {
 				var entry *creation
 				entry, err = r.factory.Call[*creation](bounded, activateRequest{ActorKey{req.Type, req.ID}})
+				// The Factory may already have admitted Runtime-owned work when its
+				// caller stops waiting. A timeout is not a definite refusal.
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					err = errors.Join(ErrActivationUnknown, err)
+				}
 				if err == nil {
 					select {
 					case <-entry.activation.selected:
