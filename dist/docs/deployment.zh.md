@@ -96,7 +96,7 @@ go build -o /tmp/dist-recover ./cmd/dist-recover
 
 ## 多工作进程与多机器
 
-本机多进程运行方式见 [Counter](../examples/counter/README.zh.md) 与 [Click](../examples/click/README.zh.md)，所有角色连接同一服务/account。
+本机多进程运行方式见 [Counter](../examples/counter/README.zh.md)、[Click](../examples/click/README.zh.md) 与 [Chat](../examples/chat/README.zh.md)，所有角色连接同一服务/account。
 
 实际跨主机时，在可达网络部署相同固定版本的 NATS，将客户端监听从 127.0.0.1 改为所需网卡，配置防火墙、认证、TLS 及上述权限。服务使用持久可写存储，主机时钟保持 ±250 ms 同步。各主机构建同一工作/调用程序，统一通过 -nats 传入可达 URL。在工作主机启动 worker，等待就绪后从调用主机运行相应 client 角色，按示例核对输出和同 key 累计结果。保留本地独立消费工具时，也可启动其 fixture worker，再从调用主机以 `consumer.py source --clients-only --nats <服务URL>` 验证完整消费用例。
 

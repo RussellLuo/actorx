@@ -96,7 +96,7 @@ For changed contracts, declare a new stable Type, such as example.counter.v2. Ke
 
 ## Multiple workers and machines
 
-See [Counter](../examples/counter/README.md) and [Click](../examples/click/README.md) for local process setup against one service/account.
+See [Counter](../examples/counter/README.md), [Click](../examples/click/README.md) and [Chat](../examples/chat/README.md) for local process setup against one service/account.
 
 For actual separate hosts, provision the same pinned NATS service in a reachable network and bind its client listener to the intended interface instead of 127.0.0.1. Configure firewall access, authentication, TLS and the permissions above. Use a durable writable server storage directory and synchronized host clocks (±250 ms). Build the same worker/client code for each host; pass -nats with the reachable URL to every process. Start workers on worker hosts, wait for readiness and run the corresponding client roles from a caller host. Check outputs and repeated same-key accumulation as documented in each example. With the optional external-consumer tools retained, also start their fixture workers and use `consumer.py source --clients-only --nats <service-URL>` from the caller host for the complete consumer suite.
 

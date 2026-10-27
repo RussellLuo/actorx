@@ -63,7 +63,9 @@ Actor 内寻址使用 `dist.MustFrom(ctx).Addr(type, id)`，Self 可取得当前
 
 ## 实际运行
 
-需要 Go 1.27。当前示例从本仓库源码运行，dist 通过 go.mod 的本地 replace 使用上一级目录的核心源码。迁移后的核心发布后，再固定其版本并移除 replace，以验证发布模块的使用。
+需要 Go 1.27。当前示例从本仓库源码运行，dist 通过 go.mod 的本地 replace 使用上一级目录的核心源码。
+
+### 启动 NATS
 
 先从 [NATS 官方 v2.10.18 发布页](https://github.com/nats-io/nats-server/releases/tag/v2.10.18)下载适合系统和架构的压缩包。以下以 macOS Apple Silicon 为例，下载、解压并将可执行文件加入当前终端 PATH；其他平台在同一发布页选择对应包：
 
@@ -74,24 +76,52 @@ tar -xzf /tmp/nats-server.tar.gz -C /tmp
 export PATH="/tmp/nats-server-v2.10.18-darwin-arm64:$PATH"
 ```
 
-进入本仓库的 dist 目录，启动开发服务。配置已开启 JetStream，监听本机4222端口；存储目录须可写：
+在终端 1 中进入本仓库的 dist 目录，启动开发服务。配置已开启 JetStream，监听本机 4222 端口；存储目录须可写：
 
 ```sh
 nats-server -c examples/nats.conf -sd /tmp/dist-counter
 ```
 
-保持服务运行，在另外两个终端中同样进入 dist 目录：
+保持终端 1 中的服务运行，后续示例共用这个 NATS 服务。
+
+### 运行 Counter
+
+打开终端 2，进入 dist 目录并启动工作进程，等待输出 `Counter worker ready`：
 
 ```sh
-# 终端 2：启动工作进程，等待 "Counter worker ready"。
 go run ./examples/counter -role worker
-# 终端 3：运行调用方，新 ID 依次输出 5、10。
+```
+
+打开终端 3，同样进入 dist 目录并运行调用方：
+
+```sh
 go run ./examples/counter -role client -id orders-42
 ```
 
-client 每轮先 Send 增加2，再 Call 增加3并返回累计值，共执行两轮，因此输出5、10。同一 worker 仍存活时，使用相同 ID 再运行 client，输出15、20。可再启动一个 worker，共同提供该类型的创建能力；Actor 间组合调用见 [Client → Button → Counter](examples/click/README.zh.md)。
+首次使用该 ID 时，输出：
 
-client 关闭不停止远端对象；worker 用 Ctrl-C 优雅关闭并等待所属实例退出。状态保存在 worker 内存中，实例退出后不保留。失联时没有自动接管，强制退出后的归属恢复见[部署指南](docs/deployment.zh.md#显式恢复与存储修复)。
+```text
+5
+10
+```
+
+client 每轮先 Send 增加 2，再 Call 增加 3 并返回累计值，共执行两轮。同一 worker 仍存活时，在终端 3 再次运行相同命令，输出 15、20：调用进程虽然退出，远端 Counter 的状态仍保存在 worker 中。
+
+### 关闭程序
+
+client 完成调用后自动退出，不会停止远端 Counter。结束示例时，在终端 2 按 Ctrl-C，等待 worker 关闭并完成所属实例的退出；最后在终端 1 按 Ctrl-C 关闭 NATS。
+
+状态保存在 worker 内存中，实例退出后不保留。失联时没有自动接管，强制退出后的归属恢复见[部署指南](docs/deployment.zh.md#显式恢复与存储修复)。
+
+### 更多示例
+
+继续尝试前，保持或重新启动上述 NATS 服务。各示例的 README 给出所需进程及命令：
+
+| 示例 | 学习内容 |
+| --- | --- |
+| [Counter](examples/counter/README.zh.md) | 启动多个 worker，观察相同 ID 的唯一归属及不同 ID 的独立状态。 |
+| [Client → Button → Counter](examples/click/README.zh.md) | 在独立进程间组合 Actor 调用。 |
+| [Chat](examples/chat/README.zh.md) | 跨进程 Stream 和慢消费时的逐段输出。 |
 
 ## 深入了解
 

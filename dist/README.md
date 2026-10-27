@@ -63,7 +63,9 @@ Inside an Actor, use `dist.MustFrom(ctx).Addr(type, id)` for addressing and Self
 
 ## Run the example
 
-Requires Go 1.27. Run from this source checkout; dist uses the core source in the parent directory through go.mod's local replacement. After publishing the migrated core, pin its version and remove the replacement for released-module consumption.
+Requires Go 1.27. Run from this source checkout; dist uses the core source in the parent directory through go.mod's local replacement.
+
+### Start NATS
 
 Download the archive for your OS and architecture from the [official NATS v2.10.18 release](https://github.com/nats-io/nats-server/releases/tag/v2.10.18). For macOS Apple Silicon, download, extract and add the executable to this terminal's PATH as follows. Other platforms can select their matching package on the same release page:
 
@@ -74,24 +76,52 @@ tar -xzf /tmp/nats-server.tar.gz -C /tmp
 export PATH="/tmp/nats-server-v2.10.18-darwin-arm64:$PATH"
 ```
 
-From the checkout's dist directory, start the development server. Its configuration enables JetStream and listens on local port 4222. The storage directory must be writable:
+In terminal 1, enter the checkout's dist directory and start the development server. Its configuration enables JetStream and listens on local port 4222. The storage directory must be writable:
 
 ```sh
 nats-server -c examples/nats.conf -sd /tmp/dist-counter
 ```
 
-Leave the server running. Open two more terminals, each in the dist directory:
+Leave terminal 1 running. The examples below share this NATS service.
+
+### Run Counter
+
+Open terminal 2, enter the dist directory and start a worker. Wait for `Counter worker ready`:
 
 ```sh
-# Terminal 2: start a worker and wait for "Counter worker ready".
 go run ./examples/counter -role worker
-# Terminal 3: a fresh ID prints 5, then 10.
+```
+
+Open terminal 3, enter the dist directory and run the client:
+
+```sh
 go run ./examples/counter -role client -id orders-42
 ```
 
-Each client round sends an increment of two, then calls an increment of three and reads the total. Two rounds print 5, then 10. While the same worker stays alive, repeat with the same ID to print 15, then 20. Start another worker to share creation capacity for the Type. See [Client → Button → Counter](examples/click/README.md) for Actor composition.
+With a previously unused ID, the output is:
 
-Closing a client leaves remote objects alive. Use Ctrl-C for graceful worker shutdown and join its owned instances. State lives in worker memory and disappears on instance exit. Unreachable owners are not replaced automatically; see [explicit recovery](docs/deployment.md#explicit-recovery-and-storage-repair) after forced exit.
+```text
+5
+10
+```
+
+Each client round sends an increment of two, then calls an increment of three and reads the total. It runs two rounds. While the same worker stays alive, repeat the command in terminal 3 to print 15, then 20: the client process exits, but the remote Counter's state remains in the worker.
+
+### Shut down
+
+The client exits automatically after its calls, leaving the remote Counter alive. To finish, press Ctrl-C in terminal 2 and wait for the worker and its owned instances to exit. Then press Ctrl-C in terminal 1 to stop NATS.
+
+State lives in worker memory and disappears on instance exit. Unreachable owners are not replaced automatically; see [explicit recovery](docs/deployment.md#explicit-recovery-and-storage-repair) after forced exit.
+
+### More examples
+
+Keep the NATS service running or restart it before continuing. Each example's README lists its processes and commands:
+
+| Example | What it teaches |
+| --- | --- |
+| [Counter](examples/counter/README.md) | Multiple workers, unique ownership for one ID and independent state for different IDs. |
+| [Client → Button → Counter](examples/click/README.md) | Actor composition across independent processes. |
+| [Chat](examples/chat/README.md) | Cross-process Stream and incremental output with a slow consumer. |
 
 ## Learn more
 
