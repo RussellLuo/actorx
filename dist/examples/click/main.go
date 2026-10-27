@@ -44,11 +44,11 @@ func run(url, role, id string) (result error) {
 
 	switch role {
 	case "button":
-		if _, err := dist.Register(context.Background(), rt, ButtonSpec); err != nil {
+		if _, err := rt.Register(context.Background(), ButtonSpec); err != nil {
 			return err
 		}
 	case "counter":
-		if _, err := dist.Register(context.Background(), rt, CounterSpec); err != nil {
+		if _, err := rt.Register(context.Background(), CounterSpec); err != nil {
 			return err
 		}
 	}

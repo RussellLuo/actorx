@@ -35,7 +35,7 @@ accounts {
 ```go
 rt, err := dist.NewRuntime(ctx,
     dist.WithNATS("nats://127.0.0.1:4222", nats.UserInfo("dev", "change-me")),
-    // 创建成功后通过 dist.Register(ctx, rt, spec) 注册工作类型。
+    // 创建成功后通过 rt.Register(ctx, spec) 注册工作类型。
 )
 ```
 

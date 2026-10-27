@@ -35,7 +35,7 @@ Run `nats-server -c nats.conf`. Runtime defaults to `nats://127.0.0.1:4222`; ove
 ```go
 rt, err := dist.NewRuntime(ctx,
     dist.WithNATS("nats://127.0.0.1:4222", nats.UserInfo("dev", "change-me")),
-    // After creation, register worker types with dist.Register(ctx, rt, spec).
+    // After creation, register worker types with rt.Register(ctx, spec).
 )
 ```
 

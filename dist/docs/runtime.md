@@ -6,17 +6,19 @@ Send/Call/Stream follow one path: **validate the contract → select and fix a g
 
 ## Registration and withdrawal
 
-Startup and later registration use the same API:
+Startup and later registration use the same Runtime method:
 
 ```go
 rt, err := dist.NewRuntime(ctx)
 // Check err and arrange Runtime.Close before registering worker types.
-registration, err := dist.Register(ctx, rt, CounterSpec)
+registration, err := rt.Register(ctx, CounterSpec)
 // Check err before opening application admission.
 
 // To withdraw this Runtime's registration independently:
 err = registration.Unregister(cleanupCtx)
 ```
+
+Runtime owns registrations, capacity, Factories and shutdown cleanup, so registration uses `rt.Register(ctx, spec)`. The returned Registration identifies that particular registration and owns independent withdrawal; an old handle cannot affect a replacement with the same Type. `ActorSpec[T]` retains the concrete Actor type through a Go 1.27 generic method.
 
 NewRuntime initializes execution, the connection and Registry. Register validates ActorSpec, publishes the immutable contract and installs the Factory and control/activation subscriptions. Success includes Flush and constructs no business instances. Even when all Types are known before startup, register them through this API. Registration uses a five-second default total budget, capped at sixty seconds with an explicit deadline; Runtime.Close also cancels installation.
 

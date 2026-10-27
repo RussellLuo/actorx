@@ -55,7 +55,7 @@ type Runtime struct {
 }
 
 // NewRuntime initializes execution, connection and Registry resources.
-// Use Register after creation to provide Actor types.
+// Use Runtime.Register after creation to provide Actor types.
 // initCtx bounds initialization only; Close owns the successful lifetime.
 // Success does not register any Actor types or construct business objects.
 func NewRuntime(initCtx context.Context, options ...Option) (*Runtime, error) {

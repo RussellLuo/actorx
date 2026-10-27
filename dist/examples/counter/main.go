@@ -43,7 +43,7 @@ func run(url, role, id string) (result error) {
 	}()
 
 	if role == "worker" {
-		if _, err := dist.Register(context.Background(), rt, CounterSpec); err != nil {
+		if _, err := rt.Register(context.Background(), CounterSpec); err != nil {
 			return err
 		}
 	}

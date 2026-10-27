@@ -110,7 +110,7 @@ func sameDescriptions(a, b []actorx.CallDescriptor) bool {
 	return true
 }
 
-// Registration owns one local Type registration. Obtain it through Register;
+// Registration owns one local Type registration. Obtain it through Runtime.Register;
 // a zero value is invalid. It must not be copied. A registration is independent
 // of other Runtime registrations and of the same Type on other Runtimes.
 type Registration struct {
@@ -136,7 +136,7 @@ type Registration struct {
 // On an installation failure a non-nil handle may accompany the error. Cleanup
 // starts automatically; Unregister can wait for it. The immutable contract may
 // remain published. Runtime.Close always joins this cleanup.
-func Register[T actorx.Actor](ctx context.Context, rt *Runtime, spec ActorSpec[T]) (*Registration, error) {
+func (rt *Runtime) Register[T actorx.Actor](ctx context.Context, spec ActorSpec[T]) (*Registration, error) {
 	if ctx == nil {
 		return nil, actorx.ErrSetup
 	}

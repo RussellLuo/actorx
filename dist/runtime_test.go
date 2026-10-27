@@ -25,7 +25,7 @@ func testContext(t *testing.T) context.Context {
 type testRegistration func(context.Context, *Runtime) (*Registration, error)
 
 func registerSpec[T actorx.Actor](spec ActorSpec[T]) testRegistration {
-	return func(ctx context.Context, rt *Runtime) (*Registration, error) { return Register(ctx, rt, spec) }
+	return func(ctx context.Context, rt *Runtime) (*Registration, error) { return rt.Register(ctx, spec) }
 }
 
 func testRuntime(t *testing.T, options ...any) *Runtime {

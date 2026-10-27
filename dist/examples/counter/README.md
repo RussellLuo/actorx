@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md) · [Module](../../README.md)
 
-actors.go defines Add, Counter and CounterSpec; main.go handles flags, Runtime lifetime and two process roles: worker registers `dist.Register(ctx, rt, CounterSpec)` and waits for shutdown; client registers no Actors and calls the remote Counter. The default role is client.
+actors.go defines Add, Counter and CounterSpec; main.go handles flags, Runtime lifetime and two process roles: worker registers `rt.Register(ctx, CounterSpec)` and waits for shutdown; client registers no Actors and calls the remote Counter. The default role is client.
 
 Start the [development NATS server](../../README.md), then run these commands from the dist directory in separate terminals:
 

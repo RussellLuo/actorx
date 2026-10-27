@@ -49,7 +49,7 @@ func run(url, role, id string, delay time.Duration) (result error) {
 	}()
 
 	if role == "worker" {
-		if _, err := dist.Register(stop, rt, AssistantSpec); err != nil {
+		if _, err := rt.Register(stop, AssistantSpec); err != nil {
 			return err
 		}
 	}

@@ -18,7 +18,7 @@ answer: Actors use messages to coordinate work.
 chunks: 6
 ```
 
-actors.go defines Ask, TextChunk, Assistant and AssistantSpec. The worker registers `dist.Register(ctx, rt, AssistantSpec)`; the client registers no Actors, obtains `Addr("chat.assistant", id)` and consumes each TextChunk through `Stream`. Both client commands explicitly pass `-id assistant-42`, which is also the default; change it to select another logical Assistant. The client role still links the shared program's Actor definitions.
+actors.go defines Ask, TextChunk, Assistant and AssistantSpec. The worker registers `rt.Register(ctx, AssistantSpec)`; the client registers no Actors, obtains `Addr("chat.assistant", id)` and consumes each TextChunk through `Stream`. Both client commands explicitly pass `-id assistant-42`, which is also the default; change it to select another logical Assistant. The client role still links the shared program's Actor definitions.
 
 The handler uses `actorx.StartTask` because `StreamReply.Write` can wait for a slow consumer. Its worker writes chunks using the task context; the serial completion callback calls `Complete(err)`. The client prints each chunk as it arrives and prints the count only after Stream succeeds.
 

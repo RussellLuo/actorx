@@ -42,7 +42,7 @@ func TestRegistrationNATS(t *testing.T) {
 			}
 			return nil
 		}
-		r, err := Register(ctx, worker, ActorSpec[*startupProbe]{Type: typ, New: func(ActorKey) *startupProbe {
+		r, err := worker.Register(ctx, ActorSpec[*startupProbe]{Type: typ, New: func(ActorKey) *startupProbe {
 			return &startupProbe{fail: errors.New("startup failed")}
 		}})
 		if err != nil {
@@ -157,7 +157,7 @@ func TestRegistrationNATS(t *testing.T) {
 		if err := replacement.Unregister(ctx); err != nil {
 			t.Fatal(err)
 		}
-		conflict, err := Register(ctx, worker, ActorSpec[*mismatch]{Type: typ, New: func(ActorKey) *mismatch { return &mismatch{} }})
+		conflict, err := worker.Register(ctx, ActorSpec[*mismatch]{Type: typ, New: func(ActorKey) *mismatch { return &mismatch{} }})
 		if !errors.Is(err, ErrContract) || conflict == nil {
 			t.Fatal("re-registration changed the immutable contract", err)
 		}
@@ -172,11 +172,11 @@ func TestRegistrationNATS(t *testing.T) {
 		typ := fmt.Sprintf("shared-%x", time.Now().UnixNano())
 		var news atomic.Int32
 		spec := ActorSpec[*counter]{Type: typ, New: func(ActorKey) *counter { news.Add(1); return &counter{} }}
-		r1, err := Register(ctx, first, spec)
+		r1, err := first.Register(ctx, spec)
 		if err != nil {
 			t.Fatal(err)
 		}
-		r2, err := Register(ctx, second, spec)
+		r2, err := second.Register(ctx, spec)
 		if err != nil {
 			t.Fatal(err)
 		}

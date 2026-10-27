@@ -44,7 +44,7 @@ Counter defines business behavior; CounterSpec declares its logical type and con
 ctx := context.Background()
 worker, _ := dist.NewRuntime(ctx)
 defer worker.Close(ctx)
-_, _ = dist.Register(ctx, worker, CounterSpec)
+_, _ = worker.Register(ctx, CounterSpec)
 ```
 
 A separate caller creates its own Runtime without registering Actors. The following assumes a request context ctx and a previously unused target ID:

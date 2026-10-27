@@ -44,7 +44,7 @@ Counter 定义业务行为，CounterSpec 声明逻辑类型和构造函数。工
 ctx := context.Background()
 worker, _ := dist.NewRuntime(ctx)
 defer worker.Close(ctx)
-_, _ = dist.Register(ctx, worker, CounterSpec)
+_, _ = worker.Register(ctx, CounterSpec)
 ```
 
 另一个调用进程创建自己的 Runtime，无需注册 Actor。以下假设已取得请求上下文 ctx，且目标 ID 尚未使用：

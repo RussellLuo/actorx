@@ -23,7 +23,7 @@ func TestRegistrationWithdrawalIsolationAndReplacement(t *testing.T) {
 		<-unblock
 		return &counter{}
 	}}
-	registration, err := Register(ctx, rt, spec)
+	registration, err := rt.Register(ctx, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestRegistrationWithdrawalIsolationAndReplacement(t *testing.T) {
 	if _, err := rt.createLocal(ctx, ActorKey{"changing", "two"}, newOperation()); !errors.Is(err, ErrTypeUnavailable) {
 		t.Fatal("withdrawn Type accepted new creation", err)
 	}
-	if _, err := Register(ctx, rt, spec); !errors.Is(err, actorx.ErrSetup) {
+	if _, err := rt.Register(ctx, spec); !errors.Is(err, actorx.ErrSetup) {
 		t.Fatal("replaced an unsettled registration", err)
 	}
 	if _, err := counterRegistration("overflow")(ctx, rt); !errors.Is(err, actorx.ErrFull) {
@@ -90,7 +90,7 @@ func TestRegistrationWaitsForStoppedAndConcurrentWaiters(t *testing.T) {
 	var once sync.Once
 	release := func() { once.Do(func() { close(unblock) }) }
 	defer release()
-	r, err := Register(ctx, rt, ActorSpec[*discardProbe]{Type: "probe", New: func(ActorKey) *discardProbe {
+	r, err := rt.Register(ctx, ActorSpec[*discardProbe]{Type: "probe", New: func(ActorKey) *discardProbe {
 		return &discardProbe{stopped: stopped, unblock: unblock}
 	}})
 	if err != nil {
@@ -191,11 +191,11 @@ func TestRegistrationInvalidAndCanceledHandles(t *testing.T) {
 	ctx := testContext(t)
 	spec := ActorSpec[*counter]{Type: "counter", New: func(ActorKey) *counter { return &counter{} }}
 	for _, invalid := range []*Runtime{nil, {}} {
-		if _, err := Register(ctx, invalid, spec); !errors.Is(err, actorx.ErrSetup) {
+		if _, err := invalid.Register(ctx, spec); !errors.Is(err, actorx.ErrSetup) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := Register(nil, rt, spec); !errors.Is(err, actorx.ErrSetup) {
+	if _, err := rt.Register(nil, spec); !errors.Is(err, actorx.ErrSetup) {
 		t.Fatal(err)
 	}
 	for _, invalid := range []*Registration{nil, {}} {
@@ -205,7 +205,7 @@ func TestRegistrationInvalidAndCanceledHandles(t *testing.T) {
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if r, err := Register(canceled, rt, spec); r != nil || !errors.Is(err, context.Canceled) {
+	if r, err := rt.Register(canceled, spec); r != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal(r, err)
 	}
 	if len(rt.registrations) != 0 {

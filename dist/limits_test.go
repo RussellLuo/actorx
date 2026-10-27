@@ -83,7 +83,7 @@ func TestConfiguredTypeCapacity(t *testing.T) {
 	}
 
 	rt := testRuntime(t, WithExecutionLimits(ExecutionLimits{Types: 1}), counterRegistration("one"))
-	if _, err := Register(testContext(t), rt, ActorSpec[*counter]{Type: "two", New: func(ActorKey) *counter { return &counter{} }}); !errors.Is(err, actorx.ErrFull) {
+	if _, err := rt.Register(testContext(t), ActorSpec[*counter]{Type: "two", New: func(ActorKey) *counter { return &counter{} }}); !errors.Is(err, actorx.ErrFull) {
 		t.Fatal(err)
 	}
 
