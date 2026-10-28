@@ -32,4 +32,4 @@ go vet ./...
 
 这些命令运行核心与生成器测试、可执行测试示例及静态检查。完整示例程序的运行方式见[示例学习路径](../examples/README.zh.md)。
 
-分布式逻辑身份及激活属于独立验收的 [Actorx Distributed 模块](../dist/README.zh.md)。核心 [Channel 扩展接口](runtime.zh.md#channel-扩展接口)集中在运行语义参考中。
+分布式逻辑身份及激活属于独立验收的 [Actorx Distributed 模块](https://github.com/go-aie/actorx-dist/blob/main/README.zh.md)。核心 [Channel 扩展接口](runtime.zh.md#channel-扩展接口)集中在运行语义参考中。

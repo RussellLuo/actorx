@@ -17,16 +17,11 @@ env:
 
 jobs:
   test:
-    name: Go (${{ matrix.module }})
+    name: Go
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ['.', 'dist']
     defaults:
       run:
-        working-directory: ${{ matrix.module }}
         shell: bash
     steps:
       - uses: actions/checkout@v7
@@ -35,11 +30,8 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ matrix.module }}/go.mod
-          cache-dependency-path: |
-            go.mod
-            dist/go.mod
-            dist/go.sum
+          go-version-file: go.mod
+          cache: false
 
       - name: Check formatting
         run: |

@@ -32,4 +32,4 @@ go vet ./...
 
 These commands run the core and generator tests, executable test examples, and static checks. To run the complete example programs, follow the [example guide](../examples/README.md).
 
-Distributed logical identity and activation live in [Actorx Distributed](../dist/README.md), an independently tested module. The runtime reference covers the [Channel extension interface](runtime.md#channel-extension-interface).
+Distributed logical identity and activation live in [Actorx Distributed](https://github.com/go-aie/actorx-dist/blob/main/README.md), an independently tested module. The runtime reference covers the [Channel extension interface](runtime.md#channel-extension-interface).

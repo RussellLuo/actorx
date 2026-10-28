@@ -55,7 +55,7 @@ The example uses generated message bindings. See [Getting started](docs/getting-
 
 See the [documentation guide](docs/README.md) for further reading and validation instructions.
 
-For distributed logical Actors, see [Actorx Distributed](dist/README.md): NATS messaging, conditional ownership, fixed generations and explicit recovery.
+For distributed logical Actors, see [Actorx Distributed](https://github.com/go-aie/actorx-dist/blob/main/README.md): NATS messaging, conditional ownership, fixed generations and explicit recovery.
 
 ## License
 
