@@ -42,20 +42,22 @@ fmt.Println(n) // 5
 
 Each actor processes messages in order and updates its state inside its own handlers.
 
-The example uses generated message bindings. See [Getting started](docs/getting-started.md) for project setup and a complete program, or the [counter example](examples/counter/README.md) to run it from the checkout. Follow the [example guide](examples/README.md) for asynchronous lookup, streaming, collaboration, and resource management.
+The example uses generated message bindings. See [Getting started](docs/getting-started.md) for project setup, binding generation, and steps to run the complete program.
 
 ## Learn more
 
 | Document | Contents |
 | --- | --- |
-| [Getting started](docs/getting-started.md) | Write an actor, call it through messages, and run the complete example. |
-| [Core concepts](docs/concepts.md) | How components collaborate through messages and own their state and tasks. |
-| [Runtime reference](docs/runtime.md) | Rules for message handling, asynchronous tasks, errors, and capacity limits. |
-| [Lifecycle](docs/lifecycle.md) | Component initialization, shutdown, and resource cleanup. |
+| [Core concepts](docs/concepts.md) | Understand actors, messages, addresses, and ownership of state and tasks. |
+| [Example guide](examples/README.md) | Start with a counter, then learn asynchronous tasks, streaming, lifecycle, and collaboration. |
+| [Runtime reference](docs/runtime.md) | Look up message handling, cancellation, errors, and capacity limits. |
+| [Lifecycle](docs/lifecycle.md) | Learn about component initialization, shutdown, and resource cleanup. |
 
-See the [documentation guide](docs/README.md) for further reading and validation instructions.
+See the [documentation guide](docs/README.md) for the full documentation.
 
-For distributed logical Actors, see [Actorx Distributed](https://github.com/go-aie/actorx-dist/blob/main/README.md): NATS messaging, conditional ownership, fixed generations and explicit recovery.
+## Distributed extension
+
+For distributed logical Actors, see [Actorx Distributed](https://github.com/go-aie/actorx-dist): NATS messaging, conditional ownership, fixed generations and explicit recovery.
 
 ## License
 

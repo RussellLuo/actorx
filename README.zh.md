@@ -42,20 +42,22 @@ fmt.Println(n) // 5
 
 每个 Actor 按顺序处理消息，业务状态在自己的处理方法中更新。
 
-示例使用生成的消息绑定，项目准备和完整程序见[快速入门](docs/getting-started.zh.md)，仓库内运行方式见[计数器示例](examples/counter/README.zh.md)。通过[示例学习路径](examples/README.zh.md)，继续了解异步查询、流式输出、组件协作和资源管理。
+示例使用生成的消息绑定。项目配置、绑定生成和完整运行步骤见[快速入门](docs/getting-started.zh.md)。
 
 ## 深入了解
 
 | 文档 | 内容 |
 | --- | --- |
-| [快速入门](docs/getting-started.zh.md) | 编写 Actor，通过消息调用它，并运行完整示例。 |
-| [核心概念](docs/concepts.zh.md) | 组件如何通过消息协作，状态与任务由谁管理。 |
-| [运行语义](docs/runtime.zh.md) | 消息处理、异步任务、错误和容量控制的具体约定。 |
-| [生命周期](docs/lifecycle.zh.md) | 组件初始化、停止与资源清理。 |
+| [核心概念](docs/concepts.zh.md) | 理解 Actor、消息、地址，以及状态和任务的归属。 |
+| [示例学习路径](examples/README.zh.md) | 从计数器开始，学习异步任务、流式输出、生命周期和组件协作。 |
+| [运行语义](docs/runtime.zh.md) | 查阅消息处理、取消、错误和容量限制。 |
+| [生命周期](docs/lifecycle.zh.md) | 了解组件初始化、停止与资源清理。 |
 
-更多阅读入口和验证说明见[文档目录](docs/README.zh.md)。
+完整文档见[文档目录](docs/README.zh.md)。
 
-分布式逻辑 Actor 见 [Actorx Distributed](https://github.com/go-aie/actorx-dist/blob/main/README.zh.md)：NATS 通信、条件归属、固定代次和显式恢复。
+## 分布式扩展
+
+需要分布式逻辑 Actor 时，参见 [Actorx Distributed](https://github.com/go-aie/actorx-dist)：NATS 通信、条件归属、固定代次和显式恢复。
 
 ## 许可证
 
