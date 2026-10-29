@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 1 | [counter](counter/README.zh.md) | 状态归属、串行消息、Send / Call、生成绑定 | `go run ./examples/counter` |
 | 2 | [profile](profile/README.zh.md) | `actorx.StartTask`、串行完成回调、延迟回复 | `go run ./examples/profile` |
-| 3 | [chat](chat/README.zh.md) | StreamReply、逐段消费与取消 | `go run ./examples/chat` |
+| 3 | [chat](chat/README.zh.md) | StreamReply、for range 消费与提前退出 | `go run ./examples/chat` |
 | 4 | [lifecycle](lifecycle/README.zh.md) | 生命周期通知、State、Stop / Wait、自身停止 | `go run ./examples/lifecycle` |
 | 5 | [composition](composition/README.zh.md) | 创建其他 actor、通过地址协作、显式回收依赖 | `go run ./examples/composition` |
 
@@ -21,7 +21,7 @@
 根目录的 [example_limits_test.go](../example_limits_test.go) 包含两个可执行示例，建议在 counter 与 chat 之后阅读：
 
 - `Example_mailbox`：设置 `WithMailboxCapacity(1)`，第一个任务正在执行，第二个填满队列，第三次 Send 返回 `ErrFull`。受控阻塞仅用于观察队列，业务 I/O 应放入 `actorx.StartTask` 的 worker。
-- `Example_stream`：设置 `WithStreamLimits(1, 1)`，第一个分片停留在消费回调，第二个填满缓冲，第三次写入必须等待消费继续。生产过程在 `actorx.StartTask` 的 worker 中执行。
+- `Example_stream`：设置 `WithStreamLimits(1, 1)`，第一个分片停留在消费循环体，第二个填满缓冲，第三次写入必须等待消费继续。生产过程在 `actorx.StartTask` 的 worker 中执行。
 
 同步信号建立执行顺序，无需 sleep。流的字节数由生产者声明，本例使用 `len(text)`。在项目根目录运行：
 

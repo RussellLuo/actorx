@@ -93,7 +93,7 @@ Stop 关闭入口、取消自有工作并结清未决请求；排队业务消息
 5. 进入 StateStopped，执行 Stopped。
 6. 固定最终 Exit.Reason，发布 Wait 的完成结果。
 
-Stopping / Stopped 的 error 或 panic 会加入最终原因，后续清理继续。退出 handler 收到已取消的 context，不能启动 StartTask 或等待自身 mailbox；外部收尾 I/O 应直接使用独立、有界的 context。Stream 调用方回调和缓冲消费由调用方管理，不阻止 actor 本身退出。
+Stopping / Stopped 的 error 或 panic 会加入最终原因，后续清理继续。退出 handler 收到已取消的 context，不能启动 StartTask 或等待自身 mailbox；外部收尾 I/O 应直接使用独立、有界的 context。Stream 循环体和缓冲消费由调用方管理，不阻止 actor 本身退出。停止迭代只请求取消，actor 退出仍通过 Wait 观察。
 
 ## 实例资源所有权
 

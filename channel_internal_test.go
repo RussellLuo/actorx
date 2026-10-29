@@ -11,12 +11,11 @@ func TestCallerAssociationsSettleOnFailureAndCancellation(t *testing.T) {
 	a := spawnFor(t, rt, func() []Binding {
 		return []Binding{HandleDeferred(func(Context, get, Reply[int]) error { return nil })}
 	})
+
 	if _, err := a.addr().Call[int](context.Background(), struct{}{}); !errors.Is(err, ErrUnhandled) {
 		t.Fatal(err)
 	}
-	if err := a.addr().Stream[int](context.Background(), get{}, func(int) error { return nil }); !errors.Is(err, ErrMode) {
-		t.Fatal(err)
-	}
+	iteratorError(t, a.addr().Stream[int](context.Background(), get{}), ErrMode)
 
 	rt.calls.mu.Lock()
 	pending, records := rt.calls.pending, len(rt.calls.calls)

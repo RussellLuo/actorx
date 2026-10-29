@@ -93,7 +93,7 @@ Stop closes admission, cancels owned work, and settles pending requests. Queued 
 5. Enters StateStopped and runs Stopped.
 6. Fixes the final Exit.Reason and publishes Wait's result.
 
-Stopping / Stopped errors or panics contribute to the final reason without skipping later cleanup. Exit handlers receive a canceled context. They cannot start tasks or wait for their own mailbox; external finalization I/O should use a separate bounded context directly. Caller-owned Stream callbacks and draining do not prevent actor exit.
+Stopping / Stopped errors or panics contribute to the final reason without skipping later cleanup. Exit handlers receive a canceled context. They cannot start tasks or wait for their own mailbox; external finalization I/O should use a separate bounded context directly. Caller-owned Stream loop bodies and draining do not prevent actor exit. Stopping iteration requests cancellation; use Wait to observe actor exit.
 
 ## Instance resource ownership
 

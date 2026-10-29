@@ -24,6 +24,7 @@ type callState struct {
 
 func newCallState(ch Channel, c config) *callState {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	return &callState{
 		channel:     ch,
 		calls:       make(map[string]*caller),
@@ -73,7 +74,7 @@ func (r correlationReply) Write(ctx context.Context, v any, bytes int) error {
 		return ErrMode
 	}
 
-	return c.stream.write(ctx, c, v, bytes)
+	return c.stream.write(ctx, c, streamChunk{value: v}, bytes)
 }
 
 func (r correlationReply) WriteConsumed(ctx context.Context, value any, bytes int) error {
@@ -85,19 +86,19 @@ func (r correlationReply) WriteConsumed(ctx context.Context, value any, bytes in
 		return ErrMode
 	}
 
-	v := &consumedChunk{value: value, done: make(chan error, 1)}
+	// A buffered receipt lets the iterator settle consumption without waiting
+	// for this writer to resume after enqueueing.
+	v := streamChunk{
+		value:    value,
+		consumed: make(chan error, 1),
+	}
 	if err := c.stream.write(ctx, c, v, bytes); err != nil {
 		return err
 	}
 
-	select {
-	case err := <-v.done:
-		return err
-	case <-ctx.Done():
-		return v.cancelled(ctx.Err())
-	case <-c.done:
-		return v.cancelled(context.Canceled)
-	}
+	// Acceptance transfers ownership to the iterator. Producer completion or
+	// cancellation of its context cannot revoke an accepted chunk or its budget.
+	return <-v.consumed
 }
 
 func (ch *callState) deliver(ctx context.Context, target string, msg any, m mode) (*caller, error) {
@@ -127,7 +128,11 @@ func (ch *callState) deliver(ctx context.Context, target string, msg any, m mode
 			release: ch.release,
 		}
 		if m == streamMode {
-			c.stream = &streamBuffer{chunks: make(chan any, ch.streamItems), maxBytes: ch.chunkBytes}
+			c.stream = &streamBuffer{
+				writeGate: make(chan struct{}, 1),
+				chunks:    make(chan streamChunk, ch.streamItems),
+				maxBytes:  ch.chunkBytes,
+			}
 		}
 
 		ch.pending++
@@ -162,7 +167,7 @@ func (ch *callState) deliver(ctx context.Context, target string, msg any, m mode
 		if c != nil {
 			c.finish(nil, err)
 			if m == streamMode {
-				c.release()
+				c.closeStream()
 			}
 		}
 

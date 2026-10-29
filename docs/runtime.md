@@ -74,19 +74,24 @@ taskCtx := ctx.WithContext(context.WithoutCancel(ctx))
 
 ## Stream
 
-Callers consume chunks serially on the calling goroutine:
+Callers use `for range` to consume chunks serially on the iterating goroutine:
 
 ```go
-err := addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"},
-    func(chunk TextChunk) error {
-        fmt.Print(chunk.Text)
-        return nil
-    })
+for chunk, err := range addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"}) {
+    if err != nil {
+        return err
+    }
+    fmt.Print(chunk.Text)
+}
 ```
 
-Produce with `stream.Write(ctx, chunk, payloadBytes)` in a StartTask worker; text can declare `len(chunk.Text)`. Write blocks on a full window, so never produce inside a state handler. After the worker returns, its serial completion calls `stream.Complete(err)`. Termination uses no data-window slot. Successful completion drains accepted chunks, and an error may follow partial output. See [chat](../examples/chat/main.go).
+`Stream[C]` returns a single-use `iter.Seq2[C, error]`. Creating it neither delivers a message nor reserves a caller slot; iteration starts the request. Keep the message and its referenced data stable until consumption. Repeated or concurrent iteration yields ErrSetup without starting another request or disturbing the first iteration. Context deadlines keep running while iteration is delayed.
 
-Callback errors return unchanged and cancel the request. Context cancellation and actor stop also end consumption. Stream cannot return until an active callback returns, so callbacks need reasonable time bounds. A nil callback returns ErrSetup; incompatible modes fail before handler execution; incompatible chunks return ErrReplyType.
+Each data item is `(chunk, nil)`. Setup failures, producer failures, context cancellation, actor stop, and chunk type mismatches yield one `(zero, err)` and end iteration; ignore the chunk when err is non-nil. Modes are checked before handler execution, and incompatible chunks yield ErrReplyType. Success drains accepted chunks and ends without an extra item or io.EOF. Producer failure also drains accepted chunks before yielding its error; cancellation or early exit can interrupt draining.
+
+Produce with `stream.Write(ctx, chunk, payloadBytes)` in a StartTask worker; text can declare `len(chunk.Text)`. Write blocks on a full window, so never produce inside a state handler. After the worker returns, its serial completion calls `stream.Complete(err)`. Termination uses no data-window slot. See [chat](../examples/chat/main.go).
+
+`break`, a return from the enclosing function, or panic unwinding stops consumption, requests cancellation, and cleans up caller resources. Panic continues to propagate; `continue` consumes the next item normally. A business error returned by the enclosing function stays with the caller; the producer observes cancellation. Early exit does not prove the producer has finished or the actor has exited. An active loop body retains its consumption budget, and `WriteConsumed` waits for that body to exit. Cancellation cannot interrupt business code, so blocking loop bodies must cooperate with ctx themselves.
 
 Local byte accounting uses the producer-declared retained payload size, between zero and the per-chunk limit. Buffered payload is at most `items * chunkBytes`, plus one chunk being consumed. Actorx does not calculate arbitrary Go heap size or account for object headers and external SDK buffers. Do not declare a small size for a large object.
 
@@ -101,7 +106,7 @@ Local byte accounting uses the producer-declared retained payload size, between 
 | `WithCallLimit(n)` | 256 | Caller-side Call / Stream associations across Runtime. |
 | `WithStreamLimits(items, chunkBytes)` | 8 / 64 KiB | Buffered items per stream and declared size per item. |
 
-The instance limit permits zero for unlimited; other settings must be positive. Negative instance limits return ErrSetup. Message and task admission return ErrFull immediately when capacity is exhausted; stream Write waits for consumption or cancellation. Raising caller capacity does not relax target limits. A Stream retains its caller slot until callbacks and draining finish. The instance limit is checked before Bindings; full Spawn returns zero Addr and ErrFull. Rollback releases capacity; unfinished Stopped retains it.
+The instance limit permits zero for unlimited; other settings must be positive. Negative instance limits return ErrSetup. Message and task admission return ErrFull immediately when capacity is exhausted; stream Write waits for consumption or cancellation. Raising caller capacity does not relax target limits. A Stream retains its caller slot until loop bodies and draining finish. The instance limit is checked before Bindings; full Spawn returns zero Addr and ErrFull. Rollback releases capacity; unfinished Stopped retains it.
 
 See the synchronized [capacity and backpressure examples](../examples/README.md#capacity-and-backpressure).
 
@@ -117,7 +122,7 @@ The table describes framework errors; business handlers can return their own err
 | `ErrUnhandled` | No ordinary binding for this concrete message; check T / *T and the message contract. |
 | `ErrMode` | Binding does not support the selected Send / Call / Stream mode; use the matching mode. |
 | `ErrReplyType` | Reply or chunk is incompatible with the caller's type parameter; fix the contract. Side effects may have occurred. |
-| `ErrSetup` | Invalid instance, binding, configuration, or callback; fix assembly. |
+| `ErrSetup` | Invalid instance, binding, configuration, or reused Stream iterator; fix assembly or create a new iterator. |
 | `ErrChunkSize` | Write declared a negative or excessive size; correct or split the chunk. |
 | `context.Canceled` / `DeadlineExceeded` | This invocation or wait was canceled or timed out; no automatic retry. |
 
@@ -213,6 +218,8 @@ Runtime exclusively owns a successfully opened Channel. Open must roll back its 
 | `Responder` | `Complete` settles once. `Write` queues a bounded chunk; `WriteConsumed` also waits for consumption. |
 
 Writes can block: use request-owned work rather than a shared receive callback. The core retains responsibility for serial execution, request/task completion and complete exit. Full interface details are in [channel.go](../channel.go).
+
+The context passed to `Write` or `WriteConsumed` bounds queue admission, including waiting behind other writers and for buffer capacity. Once accepted, the chunk belongs to the iterator. Producer completion or write-context cancellation neither revokes it nor acknowledges consumption; `WriteConsumed` keeps waiting for consumption or discard. A loop body that continues acknowledges nil, early exit or discard acknowledges context.Canceled, and a type mismatch acknowledges ErrReplyType. An active body must exit before acknowledgement. Canceling the context passed to `Addr.Stream` stops subsequent consumption.
 
 ## Context extensions and migration
 

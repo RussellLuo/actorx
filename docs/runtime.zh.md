@@ -74,19 +74,24 @@ taskCtx := ctx.WithContext(context.WithoutCancel(ctx))
 
 ## Stream
 
-调用方逐段消费，回调在调用者 goroutine 上串行执行：
+调用方用 `for range` 逐段消费，循环体在执行迭代的 goroutine 上串行运行：
 
 ```go
-err := addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"},
-    func(chunk TextChunk) error {
-        fmt.Print(chunk.Text)
-        return nil
-    })
+for chunk, err := range addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"}) {
+    if err != nil {
+        return err
+    }
+    fmt.Print(chunk.Text)
+}
 ```
 
-生产方在 StartTask worker 中调用 `stream.Write(ctx, chunk, payloadBytes)`，例如文本声明 `len(chunk.Text)`；窗口满时 Write 阻塞，不能在状态 handler 中生产。worker 返回后，由串行完成回调 `stream.Complete(err)`。终止信号不占数据窗口，成功结束前排空已接受的 chunk；部分输出后仍可能返回错误。完整程序见 [chat](../examples/chat/main.go)。
+`Stream[C]` 返回单次消费的 `iter.Seq2[C, error]`。创建迭代器不投递消息、不预留调用方名额，开始迭代才启动请求。消息及其引用的数据应在消费前保持稳定。重复或并发迭代通过错误项报告 ErrSetup，不重新投递，也不影响首次迭代。延迟迭代不会重置 context 期限。
 
-回调返回 error 时，Stream 原样返回该错误并取消请求；context 取消和 actor 停止也会结束消费。活跃回调返回前 Stream 无法返回，因此回调自身必须有合理时间边界。nil 回调返回 ErrSetup，模式不匹配在 handler 执行前拒绝，chunk 类型错配返回 ErrReplyType。
+数据项为 `(chunk, nil)`；建立失败、生产方失败、context 取消、actor 停止或分片类型错配，统一交付一次 `(零值, err)` 后结束，err 非 nil 时忽略 chunk。模式不匹配在 handler 执行前拒绝，chunk 类型错配报告 ErrReplyType。正常完成会排空已接受的分片后直接结束，不额外交付数据项或 io.EOF；生产方失败也先排空已接受的分片，再交付终态错误。取消或提前退出可中断排空。
+
+生产方在 StartTask worker 中调用 `stream.Write(ctx, chunk, payloadBytes)`，例如文本声明 `len(chunk.Text)`；窗口满时 Write 阻塞，不能在状态 handler 中生产。worker 返回后，由串行完成回调 `stream.Complete(err)`。终止信号不占数据窗口。完整程序见 [chat](../examples/chat/main.go)。
+
+`break`、外层函数 `return` 或 panic 展开会停止消费、请求取消并清理调用方资源；panic 继续传播，`continue` 正常消费下一项。外层函数返回的业务错误保留在调用方，生产方观察到取消。提前退出不证明生产方已完成或 actor 已退出。活跃循环体退出前保留其消费预算，`WriteConsumed` 也必须等待循环体退出；取消不能打断业务代码，阻塞的循环体需自行配合 ctx。
 
 本地字节预算由生产者声明保留的 payload 大小，每项必须在 0 到配置上限之间。缓冲 payload 至多为 `items * chunkBytes`，另加正在消费的一项。框架不计算任意 Go 对象的真实堆占用，不计对象头或外部 SDK 缓冲；不能用小 size 携带大对象。
 
@@ -101,7 +106,7 @@ err := addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"},
 | `WithCallLimit(n)` | 256 | 整个 Runtime 的调用方 Call / Stream 关联。 |
 | `WithStreamLimits(items, chunkBytes)` | 8 / 64 KiB | 每流缓冲项数与每项声明大小。 |
 
-除实例上限允许0表示不限外，其余配置必须为正；负实例上限返回 ErrSetup。消息或任务受理遇到容量不足立即返回 ErrFull；流窗口满时 Write 等待消费或取消。提高调用方总容量不会放宽任一目标的请求上限；Stream 的调用方名额保留到回调和缓冲消费结束。实例上限在读取 Bindings 前检查，满载 Spawn 返回零 Addr 与 ErrFull；失败回滚后可复用槽，Stopped 尚未完成时不能复用。
+除实例上限允许0表示不限外，其余配置必须为正；负实例上限返回 ErrSetup。消息或任务受理遇到容量不足立即返回 ErrFull；流窗口满时 Write 等待消费或取消。提高调用方总容量不会放宽任一目标的请求上限；Stream 的调用方名额保留到循环体和缓冲消费结束。实例上限在读取 Bindings 前检查，满载 Spawn 返回零 Addr 与 ErrFull；失败回滚后可复用槽，Stopped 尚未完成时不能复用。
 
 同步信号演示见[容量与背压示例](../examples/README.zh.md#容量与背压)。
 
@@ -117,7 +122,7 @@ err := addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"},
 | `ErrUnhandled` | 目标没有此具体消息类型的普通绑定；核对 T / *T 与消息契约。 |
 | `ErrMode` | 绑定不支持所选 Send / Call / Stream 模式；改用匹配模式。 |
 | `ErrReplyType` | 回复或 chunk 与调用方类型参数不兼容；修正契约，副作用可能已发生。 |
-| `ErrSetup` | 实例、绑定、配置或回调无效；修正装配。 |
+| `ErrSetup` | 实例、绑定、配置无效或重复消费 Stream 迭代器；修正装配或创建新迭代器。 |
 | `ErrChunkSize` | Write 的声明大小为负数或超限；修正或拆分分片。 |
 | `context.Canceled` / `DeadlineExceeded` | 当前调用或等待取消、超时；不自动重试。 |
 
@@ -213,6 +218,8 @@ Runtime 独占成功打开的 Channel。Open 失败须回滚自身工作，拒�
 | `Responder` | `Complete` 单次结算；`Write` 将 chunk 排入有界窗口，`WriteConsumed` 另等待消费。 |
 
 写入可能阻塞，应放在请求所属工作中，不能阻塞共享接收回调。核心继续负责串行执行、请求/任务完成和完整退出。完整接口说明见 [channel.go](../channel.go)。
+
+`Write` 和 `WriteConsumed` 的 context 约束分片入队，包括等待其他写入方和缓冲空间。入队后由迭代器持有分片，生产方完成或写入 context 取消不会撤回分片，也不代表消费完成；`WriteConsumed` 继续等待消费或丢弃确认。循环体正常继续确认 nil，提前退出或丢弃确认 context.Canceled，类型错配确认 ErrReplyType。活跃循环体退出前不发布确认；调用方取消 `Addr.Stream` 的 context 可停止后续消费。
 
 ## Context 扩展与迁移
 

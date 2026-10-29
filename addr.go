@@ -157,6 +157,9 @@ func (c *caller) finish(value any, err error) bool {
 	c.once.Do(func() {
 		won = true
 		c.value, c.err = value, err
+
+		// Streams retain the caller window until the iterator's current body
+		// and cleanup have finished, even if the producer has already stopped.
 		if c.mode != streamMode {
 			c.release()
 		}
@@ -173,6 +176,12 @@ func (c *caller) finish(value any, err error) bool {
 		close(c.done)
 		c.channel.mu.Unlock()
 		c.watchMu.Unlock()
+
+		if c.stream != nil {
+			// Publish the producer's terminal result after every accepted write.
+			// Consumption and its acknowledgements belong to the iterator.
+			c.stream.seal()
+		}
 	})
 
 	return won
@@ -237,136 +246,4 @@ func (addr Addr) Call[R any](ctx context.Context, msg any) (R, error) {
 	}
 
 	return replyAs[R](r.value)
-}
-
-// consumedChunk keeps a chunk's budget reserved until the caller callback returns.
-// mu arbitrates cancellation before the callback starts; done joins it afterward.
-type consumedChunk struct {
-	value              any
-	done               chan error
-	mu                 sync.Mutex
-	started, abandoned bool
-}
-
-func (v *consumedChunk) cancelled(err error) error {
-	v.mu.Lock()
-	if !v.started {
-		v.abandoned = true
-		v.mu.Unlock()
-		return err
-	}
-
-	v.mu.Unlock()
-
-	// An active callback retains its window even after cancellation.
-	<-v.done
-	return err
-}
-
-type streamBuffer struct {
-	mu       sync.Mutex
-	chunks   chan any
-	maxBytes int
-}
-
-func (s *streamBuffer) write(ctx context.Context, r *caller, value any, bytes int) error {
-	if bytes < 0 || bytes > s.maxBytes {
-		return ErrChunkSize
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	select {
-	case <-r.done:
-		return context.Canceled
-	default:
-	}
-
-	select {
-	case <-r.done:
-		return context.Canceled
-	case <-ctx.Done():
-		return ctx.Err()
-	case s.chunks <- value:
-		return nil
-	}
-}
-
-// Stream consumes chunks serially on the calling goroutine. The callback must
-// return before Stream can return. Callback errors are returned unchanged.
-func (addr Addr) Stream[C any](ctx context.Context, msg any, yield func(C) error) error {
-	if yield == nil {
-		return ErrSetup
-	}
-
-	r, err := addr.prepare(ctx, msg, streamMode)
-	if err != nil {
-		return err
-	}
-
-	// Keep the caller's window budget until its callback and final drain finish,
-	// even if the producer has already sent its terminal result.
-	defer func() {
-		r.finish(nil, context.Canceled)
-		r.release()
-	}()
-
-	consume := func(v any) (err error) {
-		if chunk, ok := v.(*consumedChunk); ok {
-			chunk.mu.Lock()
-			if chunk.abandoned {
-				chunk.mu.Unlock()
-				return context.Canceled
-			}
-
-			chunk.started = true
-			chunk.mu.Unlock()
-
-			v = chunk.value
-			defer func() { chunk.done <- err }()
-		}
-
-		chunk, err := replyAs[C](v)
-		if err != nil {
-			return err
-		}
-
-		return yield(chunk)
-	}
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case v := <-r.stream.chunks:
-			if err := consume(v); err != nil {
-				return err
-			}
-		case <-r.done:
-			// Finish closes done before waiting for a blocked writer. Taking mu now
-			// establishes that all accepted writes precede the terminal result.
-			r.stream.mu.Lock()
-			r.stream.mu.Unlock()
-
-			for {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-
-				select {
-				case v := <-r.stream.chunks:
-					if err := consume(v); err != nil {
-						return err
-					}
-				default:
-					return r.err
-				}
-			}
-		}
-	}
 }

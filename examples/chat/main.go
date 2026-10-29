@@ -68,12 +68,14 @@ func run() error {
 	defer cancel()
 
 	fmt.Print("answer: ")
-	if err := addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"}, func(chunk TextChunk) error {
+	for chunk, err := range addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"}) {
+		if err != nil {
+			return err
+		}
+
 		fmt.Print(chunk.Text)
-		return nil
-	}); err != nil {
-		return err
 	}
+
 	fmt.Println()
 	return nil
 }

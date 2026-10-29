@@ -88,7 +88,15 @@ func testRuntimeChannelCalls(t *testing.T, ch actorx.Channel) {
 
 	addr := a
 	for _, invoke := range []func() error{
-		func() error { return addr.Stream[int](ctx, localQuery{}, func(int) error { return nil }) },
+		func() error {
+			for _, err := range addr.Stream[int](ctx, localQuery{}) {
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
 		func() error { return addr.Send(ctx, localChunks{}) },
 		func() error {
 			_, err := addr.Call[int](ctx, localChunks{})
@@ -131,22 +139,37 @@ func testRuntimeChannelCalls(t *testing.T, ch actorx.Channel) {
 		t.Fatal("deferred", got, err)
 	}
 
-	// Stream returns only after all ordered callbacks and the final result.
+	// Iteration ends after all ordered chunks and the final result.
 	next := 0
-	if err := addr.Stream[int](ctx, localChunks{}, func(value int) error {
-		if value != next {
-			return errors.New("out of order")
+	for value, err := range addr.Stream[int](ctx, localChunks{}) {
+		if err != nil {
+			t.Fatal("stream completion", next, err)
 		}
 
+		if value != next {
+			t.Fatal("out of order", value, next)
+		}
 		next++
-		return nil
-	}); err != nil || next != 3 {
-		t.Fatal("stream completion", next, err)
+	}
+
+	if next != 3 {
+		t.Fatal("stream completion", next)
 	}
 
 	failure := errors.New("consumer failure")
-	if err := addr.Stream[int](ctx, localChunks{}, func(int) error { return failure }); !errors.Is(err, failure) {
-		t.Fatal("callback error", err)
+	consume := func() error {
+		for _, err := range addr.Stream[int](ctx, localChunks{}) {
+			if err != nil {
+				return err
+			}
+
+			return failure // The caller's error stays local; iteration stops.
+		}
+
+		return nil
+	}
+	if err := consume(); !errors.Is(err, failure) {
+		t.Fatal("consumer error", err)
 	}
 
 	cancelled, stop := context.WithCancel(ctx)

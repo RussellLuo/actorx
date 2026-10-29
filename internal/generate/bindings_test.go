@@ -65,7 +65,12 @@ func TestBindings(t *testing.T) {
  if n, err := b.Call[int](context.Background(), Read{}); err != nil || n != 20 { t.Fatal(n, err) }
  if err := a.Send(context.Background(), Notice{}); err != nil { t.Fatal(err) }
  if n, err := a.Call[time.Duration](context.Background(), Deferred{}); err != nil || n != time.Second { t.Fatal(n, err) }
- if err := a.Stream[time.Duration](context.Background(), Chunks{}, func(time.Duration) error { return nil }); err != nil { t.Fatal(err) }
+
+ for _, err := range a.Stream[time.Duration](context.Background(), Chunks{}) {
+  if err != nil {
+   t.Fatal(err)
+  }
+ }
 }
 `,
 	})

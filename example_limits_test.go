@@ -101,20 +101,23 @@ func Example_stream() {
 		}
 	}))
 	checkLimitExample(err)
-	checkLimitExample(addr.Stream[string](ctx, Count{}, func(text string) error {
+
+	for text, err := range addr.Stream[string](ctx, Count{}) {
+		checkLimitExample(err)
 		if text == "1" {
-			awaitLimitExample(ctx, thirdWrite) // Item 1 is in this callback; item 2 fills the window.
+			awaitLimitExample(ctx, thirdWrite) // Item 1 is in this loop body; item 2 fills the window.
 			select {
 			case <-thirdWritten:
-				return errors.New("third write exceeded the stream window")
+				panic("third write exceeded the stream window")
 			default:
 				fmt.Println("window full: third write cannot finish")
 			}
 		}
 
 		fmt.Println("consume:", text)
-		return nil // Returning lets consumption continue and frees window capacity.
-	}))
+		// Leaving the loop body lets consumption continue and frees window capacity.
+	}
+
 	// Output:
 	// window full: third write cannot finish
 	// consume: 1

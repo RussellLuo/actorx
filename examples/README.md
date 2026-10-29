@@ -10,7 +10,7 @@ Requires Go 1.27+. Run these commands from the project root. The core examples n
 | --- | --- | --- | --- |
 | 1 | [counter](counter/README.md) | State ownership, serial messages, Send / Call, generated bindings | `go run ./examples/counter` |
 | 2 | [profile](profile/README.md) | `actorx.StartTask`, serial completion, deferred reply | `go run ./examples/profile` |
-| 3 | [chat](chat/README.md) | StreamReply, incremental consumption, cancellation | `go run ./examples/chat` |
+| 3 | [chat](chat/README.md) | StreamReply, for-range consumption, early exit | `go run ./examples/chat` |
 | 4 | [lifecycle](lifecycle/README.md) | Notices, State, Stop / Wait, self-stop | `go run ./examples/lifecycle` |
 | 5 | [composition](composition/README.md) | Create another actor, communicate by address, reclaim a dependency | `go run ./examples/composition` |
 
@@ -21,7 +21,7 @@ Each example keeps its business definitions and entry point in `main.go`, with g
 The root [example_limits_test.go](../example_limits_test.go) contains two executable examples to read after counter and chat:
 
 - `Example_mailbox`: with `WithMailboxCapacity(1)`, the first job is executing, the second fills the queue, and a third Send returns `ErrFull`. The controlled blocker only demonstrates queue occupancy; application I/O belongs in `actorx.StartTask` workers.
-- `Example_stream`: with `WithStreamLimits(1, 1)`, the first chunk stays in the consumer callback, the second fills the buffer, and the third write must wait for consumption to continue. Production runs in `actorx.StartTask` workers.
+- `Example_stream`: with `WithStreamLimits(1, 1)`, the first chunk stays in the consumer loop body, the second fills the buffer, and the third write must wait for consumption to continue. Production runs in `actorx.StartTask` workers.
 
 Signals establish ordering without sleeps. The producer declares the payload byte size, using `len(text)` here. Run from the project root:
 

@@ -54,10 +54,16 @@ func TestStreamOrderPartialFailureAndModes(t *testing.T) {
 	// Both successful and failed producers must drain all accepted chunks in order.
 	for _, fail := range []bool{false, true} {
 		values := []int{}
-		err := a.addr().Stream[int](context.Background(), streamRequest{10, fail}, func(v int) error {
+		var err error
+		for v, streamErr := range a.addr().Stream[int](context.Background(), streamRequest{10, fail}) {
+			if streamErr != nil {
+				err = streamErr
+				break
+			}
+
 			values = append(values, v)
-			return nil
-		})
+		}
+
 		if (err != nil) != fail {
 			t.Fatal(err)
 		}
@@ -78,22 +84,11 @@ func TestStreamOrderPartialFailureAndModes(t *testing.T) {
 	if err := a.addr().Send(context.Background(), streamRequest{}); !errors.Is(err, ErrMode) {
 		t.Fatal(err)
 	}
-	if err := a.addr().Stream[int](
-		context.Background(), get{}, func(int) error { return nil },
-	); !errors.Is(err, ErrMode) {
-		t.Fatal(err)
-	}
-	if err := a.addr().Stream[int](context.Background(), streamRequest{}, nil); !errors.Is(err, ErrSetup) {
-		t.Fatal(err)
-	}
-	if err := a.addr().Stream[string](
-		context.Background(), streamRequest{1, false}, func(string) error { return nil },
-	); !errors.Is(err, ErrReplyType) {
-		t.Fatal(err)
-	}
+	iteratorError(t, a.addr().Stream[int](context.Background(), get{}), ErrMode)
+	iteratorError(t, a.addr().Stream[string](context.Background(), streamRequest{1, false}), ErrReplyType)
 }
 
-func TestStreamBackpressureCallbackErrorAndStop(t *testing.T) {
+func TestStreamBackpressureConsumerReturnAndStop(t *testing.T) {
 	rt := runtimeFor(t, WithStreamLimits(1, 8))
 	var writes atomic.Int32
 	a := streamActor(t, rt, &writes)
@@ -102,15 +97,23 @@ func TestStreamBackpressureCallbackErrorAndStop(t *testing.T) {
 	sentinel := errors.New("consumer failed")
 	result := make(chan error, 1)
 	go func() {
-		result <- a.addr().Stream[int](context.Background(), streamRequest{100, false}, func(int) error {
-			close(entered)
-			<-release
-			return sentinel
-		})
+		result <- func() error {
+			for _, err := range a.addr().Stream[int](context.Background(), streamRequest{100, false}) {
+				if err != nil {
+					return err
+				}
+
+				close(entered)
+				<-release
+				return sentinel // Exits the caller; the iterator requests cancellation.
+			}
+			return nil
+		}()
 	}()
+
 	await(t, entered)
 
-	// One in the callback, one queued; the third write cannot succeed.
+	// One in the loop body, one queued; the third write cannot succeed.
 	time.Sleep(20 * time.Millisecond)
 	if n := writes.Load(); n > 2 {
 		t.Fatal("unbounded stream", n)
@@ -139,19 +142,22 @@ func TestStreamCancellationAndChunkLimit(t *testing.T) {
 	rt := runtimeFor(t, WithStreamLimits(1, 4))
 	a := streamActor(t, rt, nil)
 
-	if err := a.addr().Stream[int](
-		context.Background(), streamRequest{1, false}, func(int) error { return nil },
-	); !errors.Is(err, ErrChunkSize) {
-		t.Fatal(err)
-	}
+	iteratorError(t, a.addr().Stream[int](context.Background(), streamRequest{1, false}), ErrChunkSize)
 
 	rt2 := runtimeFor(t, WithStreamLimits(1, 8))
 	a2 := streamActor(t, rt2, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	err := a2.addr().Stream[int](ctx, streamRequest{1000, false}, func(int) error {
+	defer cancel()
+
+	var err error
+	for _, streamErr := range a2.addr().Stream[int](ctx, streamRequest{1000, false}) {
+		if streamErr != nil {
+			err = streamErr
+			break
+		}
+
 		cancel()
-		return nil
-	})
+	}
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
@@ -175,8 +181,15 @@ func TestStreamStopWithoutTerminal(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		result <- a.addr().Stream[int](context.Background(), get{}, func(int) error { return nil })
+		for _, err := range a.addr().Stream[int](context.Background(), get{}) {
+			if err != nil {
+				result <- err
+				return
+			}
+		}
+		result <- nil
 	}()
+
 	await(t, entered)
 
 	a.addr().Stop(nil)
@@ -187,19 +200,25 @@ func TestStreamStopWithoutTerminal(t *testing.T) {
 	waitExitFor(t, a.addr())
 }
 
-func TestStreamWindowHeldUntilCallbackReturns(t *testing.T) {
+func TestStreamWindowHeldUntilLoopBodyExits(t *testing.T) {
 	rt := runtimeFor(t, WithCallLimit(1))
 	a := streamActor(t, rt, nil)
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	finished := make(chan error, 1)
 	go func() {
-		finished <- a.addr().Stream[int](context.Background(), streamRequest{1, false}, func(int) error {
+		for _, err := range a.addr().Stream[int](context.Background(), streamRequest{1, false}) {
+			if err != nil {
+				finished <- err
+				return
+			}
+
 			close(entered)
 			<-release
-			return nil
-		})
+		}
+		finished <- nil
 	}()
+
 	await(t, entered)
 
 	// Wait for producer completion without going through a second Call slot.
@@ -255,11 +274,16 @@ func TestStreamCancelDuringFinalDrain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := a.addr().Stream[int](ctx, get{}, func(int) error {
+	var err error
+	for _, streamErr := range a.addr().Stream[int](ctx, get{}) {
+		if streamErr != nil {
+			err = streamErr
+			break
+		}
+
 		await(t, terminated)
 		cancel()
-		return nil
-	})
+	}
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal("cancel during terminal drain was lost", err)

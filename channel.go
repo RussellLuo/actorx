@@ -28,10 +28,14 @@ type Responder interface {
 	Complete(any, error) bool
 
 	// Write accepts a chunk into a bounded window; it need not wait for consumption.
+	// ctx bounds admission, including waiting behind other writers or for capacity.
 	Write(context.Context, any, int) error
 
-	// WriteConsumed additionally waits for the caller callback. Cancellation
-	// cannot release an active callback's budget before that callback returns.
+	// WriteConsumed uses ctx to bound acceptance, then waits for consumption or
+	// discard by the iterator. Producer completion and write-context cancellation
+	// cannot revoke an accepted chunk. A body that continues acknowledges nil;
+	// early exit or discard acknowledges context.Canceled, and a type mismatch
+	// acknowledges ErrReplyType. An active body must exit before acknowledgement.
 	// Use a request-owned worker, never a shared receive callback.
 	WriteConsumed(context.Context, any, int) error
 }
