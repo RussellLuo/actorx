@@ -91,7 +91,7 @@ for chunk, err := range addr.Stream[TextChunk](ctx, Ask{Topic: "Actors"}) {
 
 生产方在 StartTask worker 中调用 `stream.Write(ctx, chunk, payloadBytes)`，例如文本声明 `len(chunk.Text)`；窗口满时 Write 阻塞，不能在状态 handler 中生产。worker 返回后，由串行完成回调 `stream.Complete(err)`。终止信号不占数据窗口。完整程序见 [chat](../examples/chat/main.go)。
 
-`break`、外层函数 `return` 或 panic 展开会停止消费、请求取消并清理调用方资源；panic 继续传播，`continue` 正常消费下一项。外层函数返回的业务错误保留在调用方，生产方观察到取消。提前退出不证明生产方已完成或 actor 已退出。活跃循环体退出前保留其消费预算，`WriteConsumed` 也必须等待循环体退出；取消不能打断业务代码，阻塞的循环体需自行配合 ctx。
+`break`、外层函数 `return` 或 panic 展开会停止消费、请求取消并清理调用方资源；panic 继续传播，`continue` 正常消费下一项。外层函数返回的业务错误保留在调用方，生产方观察到取消。提前退出不证明生产方已完成或 actor 已退出。活跃循环体退出前保留其消费预算，退出后才发布消费收据；`WriteConsumed` 的等待取消时可以提前返回。取消不能打断业务代码，阻塞的循环体需自行配合 ctx。
 
 本地字节预算由生产者声明保留的 payload 大小，每项必须在 0 到配置上限之间。缓冲 payload 至多为 `items * chunkBytes`，另加正在消费的一项。框架不计算任意 Go 对象的真实堆占用，不计对象头或外部 SDK 缓冲；不能用小 size 携带大对象。
 
@@ -219,7 +219,11 @@ Runtime 独占成功打开的 Channel。Open 失败须回滚自身工作，拒�
 
 写入可能阻塞，应放在请求所属工作中，不能阻塞共享接收回调。核心继续负责串行执行、请求/任务完成和完整退出。完整接口说明见 [channel.go](../channel.go)。
 
-`Write` 和 `WriteConsumed` 的 context 约束分片入队，包括等待其他写入方和缓冲空间。入队后由迭代器持有分片，生产方完成或写入 context 取消不会撤回分片，也不代表消费完成；`WriteConsumed` 继续等待消费或丢弃确认。循环体正常继续确认 nil，提前退出或丢弃确认 context.Canceled，类型错配确认 ErrReplyType。活跃循环体退出前不发布确认；调用方取消 `Addr.Stream` 的 context 可停止后续消费。
+`Write` 和 `WriteConsumed` 的 context 约束分片入队，包括等待其他写入方和缓冲空间。`WriteConsumed` 还用它约束消费或丢弃收据的等待：取消时返回 `ctx.Err()`，不撤回已接受分片、不结算收据、不释放其消费预算。迭代器继续持有分片，写入方离开后仍可通过有缓冲的收据通道完成结算。循环体正常继续确认 nil，提前退出或丢弃确认 context.Canceled，类型错配确认 ErrReplyType。活跃循环体退出前不发布确认，调用方名额保留到迭代器退出清理；取消 `Addr.Stream` 的 context 可停止后续消费。
+
+`WriteConsumed` 返回 nil 确认消费成功，即循环体正常继续，不证明业务事务已持久化。context 错误可能来自准入、等待取消或丢弃，不能据此判断分片被拒绝或未消费，也不能直接重试。准入与取消并发时沿用既有竞争语义；收据与取消同时就绪时，允许返回任一结果。值不会被复制：没有其他消费结束证明时，不能因取消返回就修改引用数据或归还底层 buffer 到池中。
+
+`Complete` 结束生产，不代替消费方结算。它也会取消请求 context，因此使用该 context 的 `WriteConsumed` 可能在生产成功完成后返回 context.Canceled，已接受分片仍继续排空。独立且未取消的写入 context 则继续等待迭代器收据。
 
 ## Context 扩展与迁移
 

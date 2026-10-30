@@ -98,7 +98,13 @@ func (r correlationReply) WriteConsumed(ctx context.Context, value any, bytes in
 
 	// Acceptance transfers ownership to the iterator. Producer completion or
 	// cancellation of its context cannot revoke an accepted chunk or its budget.
-	return <-v.consumed
+	// Canceling this wait leaves consumption and its receipt with the iterator.
+	select {
+	case err := <-v.consumed:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (ch *callState) deliver(ctx context.Context, target string, msg any, m mode) (*caller, error) {

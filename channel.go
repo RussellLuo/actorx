@@ -31,11 +31,17 @@ type Responder interface {
 	// ctx bounds admission, including waiting behind other writers or for capacity.
 	Write(context.Context, any, int) error
 
-	// WriteConsumed uses ctx to bound acceptance, then waits for consumption or
-	// discard by the iterator. Producer completion and write-context cancellation
-	// cannot revoke an accepted chunk. A body that continues acknowledges nil;
-	// early exit or discard acknowledges context.Canceled, and a type mismatch
-	// acknowledges ErrReplyType. An active body must exit before acknowledgement.
+	// WriteConsumed uses ctx to bound admission and waiting for the iterator's
+	// consumption or discard receipt. Cancellation ends the wait without revoking
+	// an accepted chunk or releasing its data or consumption budget. Values are
+	// not copied; a context error does not permit reusing their backing storage.
+	// A body that continues acknowledges nil; early exit or discard acknowledges
+	// context.Canceled, and a type mismatch acknowledges ErrReplyType. An active
+	// body must exit before acknowledgement. Nil proves successful consumption;
+	// context errors do not distinguish admission, wait cancellation or discard
+	// and must not trigger automatic retries. If receipt and cancellation are both
+	// ready, either may win. Complete cancels the request context, so writes using
+	// it may return context.Canceled even after successful producer completion.
 	// Use a request-owned worker, never a shared receive callback.
 	WriteConsumed(context.Context, any, int) error
 }

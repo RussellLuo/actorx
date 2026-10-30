@@ -183,7 +183,9 @@ func TestStreamIteratorConsumptionCleanup(t *testing.T) {
 			defer cancel()
 
 			wrote := make(chan error, 1)
-			addr := iteratorAddr(t, func(ctx context.Context, reply Responder) error {
+			// Keep the write context independent of request cancellation so this
+			// test observes the iterator's exact consumption receipt.
+			addr := iteratorAddr(t, func(_ context.Context, reply Responder) error {
 				go func() {
 					err := reply.WriteConsumed(ctx, 7, 1)
 					wrote <- err
@@ -446,9 +448,11 @@ func TestStreamIteratorActiveConsumptionBarrier(t *testing.T) {
 			wrote := make(chan error, 1)
 			var reply Responder
 			var requestCtx context.Context
+			var receipt <-chan error
 			addr := iteratorAddr(t, func(ctx context.Context, r Responder) error {
 				reply, requestCtx = r, ctx
-				go func() { wrote <- r.WriteConsumed(ctx, 7, 1) }()
+				go func() { wrote <- r.WriteConsumed(context.Background(), 7, 1) }()
+				receipt = queuedConsumptionReceipt(t, r.(correlationReply).lookup())
 				return nil
 			})
 
@@ -474,12 +478,14 @@ func TestStreamIteratorActiveConsumptionBarrier(t *testing.T) {
 				await(t, requestCtx.Done())
 				iteratorError(t, addr.Stream[int](context.Background(), struct{}{}), ErrFull)
 
-				// Give the waiting writer an opportunity to observe cancellation.
-				// It must join this body rather than acknowledge consumption early.
+				// Producer termination does not settle the iterator's receipt.
+				if len(receipt) != 0 {
+					t.Fatal("active consumption receipt published early")
+				}
 				select {
 				case err := <-wrote:
 					t.Fatal("active consumption acknowledged early", err)
-				case <-time.After(20 * time.Millisecond):
+				default:
 				}
 			}
 
@@ -550,7 +556,7 @@ func queuedConsumption(t *testing.T, final error) (Addr, <-chan error) {
 	addr := iteratorAddr(t, func(ctx context.Context, reply Responder) error {
 		c := reply.(correlationReply).lookup()
 		for value := 1; value <= 2; value++ {
-			go func() { wrote <- reply.WriteConsumed(ctx, value, 1) }()
+			go func() { wrote <- reply.WriteConsumed(context.Background(), value, 1) }()
 			awaitQueuedChunks(t, c, value)
 		}
 		if !reply.Complete(nil, final) {
@@ -562,7 +568,7 @@ func queuedConsumption(t *testing.T, final error) (Addr, <-chan error) {
 		select {
 		case err := <-wrote:
 			t.Fatal("producer completion abandoned accepted chunk", err)
-		case <-time.After(20 * time.Millisecond):
+		default:
 		}
 		return nil
 	})
@@ -580,6 +586,37 @@ func awaitQueuedChunks(t *testing.T, c *caller, count int) {
 			t.Fatal("writer did not queue chunks", count)
 		case <-time.After(time.Millisecond):
 		}
+	}
+}
+
+// Inspect the sole queued chunk before Deliver returns, when iteration cannot
+// receive it yet. Restore it unchanged so the iterator still owns settlement.
+func queuedConsumptionReceipt(t *testing.T, c *caller) <-chan error {
+	t.Helper()
+
+	awaitQueuedChunks(t, c, 1)
+	chunk := <-c.stream.chunks
+	c.stream.chunks <- chunk
+	return chunk.consumed
+}
+
+// Use only after the writer has left its wait, so this read cannot steal its
+// receipt. A second settlement must not remain after iterator cleanup.
+func assertConsumptionReceipt(t *testing.T, receipt <-chan error, want error) {
+	t.Helper()
+
+	select {
+	case err := <-receipt:
+		if !errors.Is(err, want) {
+			t.Fatal("consumption receipt", err, "want", want)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("iterator did not settle consumption")
+	}
+	select {
+	case err := <-receipt:
+		t.Fatal("duplicate consumption receipt", err)
+	default:
 	}
 }
 
@@ -736,47 +773,245 @@ func TestStreamIteratorAdmissionFailureDiscardsAcceptedChunk(t *testing.T) {
 }
 
 func TestStreamIteratorWriteContextAfterAcceptance(t *testing.T) {
-	wrote := make(chan error, 1)
-	addr := iteratorAddr(t, func(_ context.Context, reply Responder) error {
-		c := reply.(correlationReply).lookup()
+	for _, terminal := range []string{"write cancel", "write deadline", "producer success", "producer failure"} {
+		for _, action := range []string{"continue", "break", "panic", "wrong type"} {
+			t.Run(terminal+"/"+action, func(t *testing.T) {
+				var final error
+				if terminal == "producer failure" {
+					final = errors.New("producer failed")
+				}
+				var receipt <-chan error
+				addr := iteratorAddr(t, func(requestCtx context.Context, reply Responder) error {
+					c := reply.(correlationReply).lookup()
+					ctx, cancel := context.WithCancel(context.Background())
+					if terminal == "write deadline" {
+						cancel()
+						ctx, cancel = context.WithTimeout(context.Background(), 100*time.Millisecond)
+					}
+					defer cancel()
+					if terminal == "producer success" || terminal == "producer failure" {
+						ctx = requestCtx
+					}
+					wrote := make(chan error, 1)
+					go func() { wrote <- reply.WriteConsumed(ctx, 7, 1) }()
+					receipt = queuedConsumptionReceipt(t, c)
+
+					// Deliver has not returned, so consumption cannot have started.
+					switch terminal {
+					case "write cancel":
+						cancel()
+					case "producer success", "producer failure":
+						if !reply.Complete(nil, final) {
+							t.Fatal("producer completion rejected")
+						}
+					}
+					await(t, ctx.Done())
+					select {
+					case err := <-wrote:
+						if err != ctx.Err() {
+							t.Fatal("write wait returned", err, "want", ctx.Err())
+						}
+					case <-time.After(3 * time.Second):
+						t.Fatal("cancellation did not end accepted write wait")
+					}
+					if len(c.stream.chunks) != 1 || len(receipt) != 0 {
+						t.Fatal("waiting writer revoked or settled accepted chunk")
+					}
+					if terminal == "write cancel" || terminal == "write deadline" {
+						if requestCtx.Err() != nil || !reply.Complete(nil, nil) {
+							t.Fatal("write cancellation ended production")
+						}
+					}
+					return nil
+				})
+
+				want := context.Canceled
+				if action == "wrong type" {
+					want = ErrReplyType
+					iteratorError(t, addr.Stream[string](context.Background(), struct{}{}), ErrReplyType)
+				} else {
+					if action == "continue" {
+						want = nil
+					}
+					const panicValue = "loop panic"
+					func() {
+						defer func() {
+							v := recover()
+							if action == "panic" && v != panicValue {
+								t.Errorf("panic = %v, want %v", v, panicValue)
+							} else if action != "panic" && v != nil {
+								panic(v)
+							}
+						}()
+						data, failures := 0, 0
+						for value, err := range addr.Stream[int](context.Background(), struct{}{}) {
+							if err != nil {
+								failures++
+								if final == nil || err != final || data != 1 || value != 0 {
+									t.Fatal("unexpected terminal item", value, err, data)
+								}
+								continue
+							}
+							data++
+							if data != 1 || value != 7 {
+								t.Fatal("accepted chunk was not preserved", value, data)
+							}
+							if action == "panic" {
+								panic(panicValue)
+							}
+							if action == "break" {
+								break
+							}
+							if len(receipt) != 0 {
+								t.Fatal("active body acknowledged before exit")
+							}
+						}
+						wantFailures := 0
+						if action == "continue" && final != nil {
+							wantFailures = 1
+						}
+						if data != 1 || failures != wantFailures {
+							t.Fatal("unexpected item counts", data, failures)
+						}
+					}()
+				}
+				assertConsumptionReceipt(t, receipt, want)
+				assertIteratorIdle(t, addr)
+			})
+		}
+	}
+}
+
+func TestStreamIteratorActiveWriteWaitCancellation(t *testing.T) {
+	for _, terminal := range []string{"caller cancel", "producer complete", "write cancel", "write deadline"} {
+		t.Run(terminal, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			var reply Responder
+			var writeCtx context.Context
+			var cancelWrite context.CancelFunc
+			var receipt <-chan error
+			wrote := make(chan error, 1)
+			addr := iteratorAddr(t, func(requestCtx context.Context, r Responder) error {
+				reply, writeCtx = r, requestCtx
+				if terminal == "write cancel" {
+					writeCtx, cancelWrite = context.WithCancel(context.Background())
+				} else if terminal == "write deadline" {
+					writeCtx, cancelWrite = context.WithTimeout(context.Background(), 100*time.Millisecond)
+				}
+				if cancelWrite != nil {
+					t.Cleanup(cancelWrite)
+				}
+				go func() { wrote <- r.WriteConsumed(writeCtx, 7, 1) }()
+				receipt = queuedConsumptionReceipt(t, r.(correlationReply).lookup())
+				return nil
+			})
+
+			data, failures := 0, 0
+			for value, err := range addr.Stream[int](ctx, struct{}{}) {
+				if err != nil {
+					failures++
+					if terminal != "caller cancel" || value != 0 || err != context.Canceled {
+						t.Fatal("unexpected terminal item", value, err)
+					}
+					continue
+				}
+				data++
+				if data != 1 || value != 7 {
+					t.Fatal("unexpected data item", value, data)
+				}
+				switch terminal {
+				case "caller cancel":
+					cancel()
+				case "producer complete":
+					if !reply.Complete(nil, nil) {
+						t.Fatal("producer completion rejected")
+					}
+				case "write cancel":
+					cancelWrite()
+				}
+				await(t, writeCtx.Done())
+				select {
+				case err := <-wrote:
+					if err != writeCtx.Err() {
+						t.Fatal("write wait returned", err, "want", writeCtx.Err())
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("active consumption prevented wait cancellation")
+				}
+				if len(receipt) != 0 {
+					t.Fatal("canceled wait acknowledged active consumption")
+				}
+				iteratorError(t, addr.Stream[int](context.Background(), struct{}{}), ErrFull)
+				if terminal == "write cancel" || terminal == "write deadline" {
+					if !reply.Complete(nil, nil) {
+						t.Fatal("write cancellation ended production")
+					}
+				}
+			}
+			wantFailures := 0
+			if terminal == "caller cancel" {
+				wantFailures = 1
+			}
+			if data != 1 || failures != wantFailures {
+				t.Fatal("unexpected item counts", data, failures)
+			}
+			assertConsumptionReceipt(t, receipt, nil)
+			assertIteratorIdle(t, addr)
+		})
+	}
+}
+
+func TestStreamIteratorWriteWaitCancellationRace(t *testing.T) {
+	for range 32 {
 		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		start, canceled := make(chan struct{}), make(chan struct{})
+		wrote := make(chan error, 1)
+		var receipt <-chan error
+		addr := iteratorAddr(t, func(_ context.Context, reply Responder) error {
+			go func() { wrote <- reply.WriteConsumed(ctx, 7, 1) }()
+			receipt = queuedConsumptionReceipt(t, reply.(correlationReply).lookup())
+			reply.Complete(nil, nil)
+			return nil
+		})
 		go func() {
-			err := reply.WriteConsumed(ctx, 7, 1)
-			wrote <- err
-			reply.Complete(nil, err)
+			<-start
+			cancel()
+			close(canceled)
 		}()
 
-		// Cancel only after acceptance: the iterator still owns the receipt.
-		awaitQueuedChunks(t, c, 1)
-		cancel()
+		data := 0
+		for value, err := range addr.Stream[int](context.Background(), struct{}{}) {
+			data++
+			if data != 1 || value != 7 || err != nil {
+				t.Fatal("unexpected data item", value, err, data)
+			}
+			// Let cancellation race with this body's normal consumption receipt.
+			close(start)
+		}
+		if data != 1 {
+			t.Fatal("missing accepted chunk")
+		}
+		await(t, canceled)
 		select {
 		case err := <-wrote:
-			t.Fatal("write context revoked accepted chunk", err)
-		case <-time.After(20 * time.Millisecond):
+			switch err {
+			case nil:
+				if len(receipt) != 0 {
+					t.Fatal("duplicate consumption receipt")
+				}
+			case context.Canceled:
+				assertConsumptionReceipt(t, receipt, nil)
+			default:
+				t.Fatal("unexpected race result", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("receipt/cancellation race retained writer")
 		}
-		return nil
-	})
-
-	data := 0
-	for value, err := range addr.Stream[int](context.Background(), struct{}{}) {
-		data++
-		if data != 1 || value != 7 || err != nil {
-			t.Fatal("accepted chunk was not consumed", value, err)
-		}
+		assertIteratorIdle(t, addr)
 	}
-
-	if data != 1 {
-		t.Fatal("missing accepted chunk")
-	}
-	select {
-	case err := <-wrote:
-		if err != nil {
-			t.Fatal("consumption was not acknowledged", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("consumed writer still blocked")
-	}
-	assertIteratorIdle(t, addr)
 }
 
 func TestStreamIteratorCanceledWriteDoesNotQueue(t *testing.T) {
@@ -880,10 +1115,10 @@ func TestStreamIteratorErrorBodyCanJoinDiscardedWriters(t *testing.T) {
 			defer cancel()
 
 			wrote := make(chan error, 2)
-			addr := iteratorAddr(t, func(ctx context.Context, reply Responder) error {
+			addr := iteratorAddr(t, func(_ context.Context, reply Responder) error {
 				c := reply.(correlationReply).lookup()
 				for value := 1; value <= 2; value++ {
-					go func() { wrote <- reply.WriteConsumed(ctx, value, 1) }()
+					go func() { wrote <- reply.WriteConsumed(context.Background(), value, 1) }()
 					awaitQueuedChunks(t, c, value)
 				}
 				if reason == "cancel" {
